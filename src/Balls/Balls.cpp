@@ -34,29 +34,35 @@ float frames = 0.f;
 float deltaTime = 0.f;
 
 struct Ball {
-	ImVec2 posCenter;
+	ImVec2 positionCurrent;
+	ImVec2 positionOld;
 	float radius;
-	ImVec2 velocity;
+	ImVec2 acceleration;
 	uint32_t color;
 
-	Ball(ImVec2 cen, float r, ImVec2 v, uint32_t col = 0xffff00ff) {
-		posCenter = cen;
+	Ball(ImVec2 pos, float r, ImVec2 v, uint32_t col = 0xffff00ff) {
+		positionCurrent = pos;
+		positionOld = { pos.x - v.x, pos.y - v.y };
 		radius = r;
-		velocity = v;
 		color = col;
 	}
 
 	void move(ImVec2 dist) {
-		posCenter.x += dist.x;
-		posCenter.y += dist.y;
+		positionCurrent.x += dist.x;
+		positionCurrent.y += dist.y;
+	}
+
+	void accelerate(ImVec2 acc) {
+		acceleration.x += acc.x;
+		acceleration.y += acc.y;
 	}
 
 	void update(float timeDelta) {
-		//gravity 
-		velocity.y += timeDelta * GRAVITAIONAL_FORCE;
-
-		ImVec2 moveDist = { timeDelta * velocity.x, timeDelta * velocity.y };
+		ImVec2 velocity = { positionCurrent.x - positionOld.x, positionCurrent.y - positionOld.y };
+		positionOld = positionCurrent;
+		ImVec2 moveDist = { timeDelta * timeDelta * acceleration.x + velocity.x, timeDelta * timeDelta * acceleration.y + velocity.y };
 		move(moveDist);
+		acceleration = {};
 	}
 };
 
@@ -92,23 +98,19 @@ void showBallsWindow() {
 	ImGui::Begin("balls");
 	for (Ball* ball : balls) {
 		ImVec2 posWindowOffset = ImGui::GetWindowPos();
-		ImVec2 posBallOffset = { ball->posCenter.x + posWindowOffset.x, ball->posCenter.y + posWindowOffset.y };
+		ImVec2 posBallOffset = { ball->positionCurrent.x + posWindowOffset.x, ball->positionCurrent.y + posWindowOffset.y };
 		ImGui::GetWindowDrawList()->AddCircleFilled(posBallOffset, ball->radius, ball->color);
-		if (ball->posCenter.y + ball->radius > ImGui::GetWindowHeight()) {
-			ball->velocity.y *= -.9;
-			ball->posCenter.y = ImGui::GetWindowHeight() - ball->radius;
+		if (ball->positionCurrent.y + ball->radius > ImGui::GetWindowHeight()) {
+			ball->positionCurrent.y = ImGui::GetWindowHeight() - ball->radius;
 		}
-		if (ball->posCenter.y - ball->radius < 0) {
-			ball->velocity.y *= -.9;
-			ball->posCenter.y = ball->radius;
+		if (ball->positionCurrent.y - ball->radius < 0) {
+			ball->positionCurrent.y = ball->radius;
 		}
-		if (ball->posCenter.x + ball->radius > ImGui::GetWindowWidth()) {
-			ball->velocity.x *= -.9;
-			ball->posCenter.x = ImGui::GetWindowWidth() - ball->radius;
+		if (ball->positionCurrent.x + ball->radius > ImGui::GetWindowWidth()) {
+			ball->positionCurrent.x = ImGui::GetWindowWidth() - ball->radius;
 		}
-		if (ball->posCenter.x - ball->radius < 0) {
-			ball->velocity.x *= -.9;
-			ball->posCenter.x = ball->radius;
+		if (ball->positionCurrent.x - ball->radius < 0) {
+			ball->positionCurrent.x = ball->radius;
 		}
 	}
 
@@ -127,8 +129,8 @@ void handleCollisions() {
 	for (Ball* ball1 : balls) {
 		for (Ball* ball2 : balls) {
 			if (ball1 != ball2) {
-				float dx = ball2->posCenter.x - ball1->posCenter.x;
-				float dy = ball2->posCenter.y - ball1->posCenter.y;
+				float dx = ball2->positionCurrent.x - ball1->positionCurrent.x;
+				float dy = ball2->positionCurrent.y - ball1->positionCurrent.y;
 				float dist = sqrt(dx * dx + dy * dy);
 				if (dist < ball1->radius + ball2->radius) {
 					ball1->move({ dx/-2, dy/-2 });
@@ -141,7 +143,7 @@ void handleCollisions() {
 
 int main()
 {
-	BallShooter* shooter = new BallShooter({ 50, 50 }, { 1, 0 }, 500);
+	BallShooter* shooter = new BallShooter({ 50, 50 }, { 1, 0 }, 2);
 
 	// glfw: initialize and configure
 	// ------------------------------
@@ -220,6 +222,7 @@ int main()
 
 		for (auto ball : balls) {
 			ball->update(deltaTime / 1000);
+			ball->accelerate({ 0, GRAVITAIONAL_FORCE });
 		}
 
 		handleCollisions();
