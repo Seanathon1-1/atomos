@@ -39,7 +39,8 @@ project "Balls" -- Name of project
         "./dependencies/glfw-3.2.1/include",
         "./dependencies/glew-2.0.0/include",
 	    "./lib/ImGui",
-	    "./lib/ImGui/backends"
+	    "./lib/ImGui/backends",
+        "./lib/glm"
     }
 
     --libraries and links

@@ -8,19 +8,20 @@
 #include "imgui_impl_opengl3.h"
 #include <GL\glew.h>
 #include <GLFW/glfw3.h>
+#include "glm.hpp"
 
 #include <chrono>
 #include <vector>
 #include <iostream>
 
 #define GRAVITAIONAL_FORCE 96
-#define REFRACTORY_TIME 45
-#define BALL_SIZE 2
+#define REFRACTORY_TIME 125
+#define BALL_SIZE 8
 
 #define SIMULATION_WINDOW_WIDTH 800
 #define SIMULATION_WINDOW_HEIGHT 500
 
-#define FPS_60_FRAME_TIME 1.f / 60.f
+#define FPS_60_FRAME_TIME 1.f / 60.f * 1000.f
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -37,47 +38,42 @@ float frames = 0.f;
 float deltaTime = 0.f;
 
 struct Ball {
-	ImVec2 positionCurrent;
-	ImVec2 positionOld;
+	glm::vec2 positionCurrent;
+	glm::vec2 positionOld;
 	float radius;
-	ImVec2 acceleration;
+	glm::vec2 acceleration;
 	uint32_t color;
 
-	Ball(ImVec2 pos, float r, ImVec2 v, uint32_t col = 0xffff00ff) {
+	Ball(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = 0xffff00ff) {
 		positionCurrent = pos;
 		positionOld = { pos.x - v.x, pos.y - v.y };
 		radius = r;
 		color = col;
+		acceleration = glm::vec2(0);
 	}
 
-	void move(ImVec2 dist) {
-		positionCurrent.x += dist.x;
-		positionCurrent.y += dist.y;
-	}
-
-	void accelerate(ImVec2 acc) {
-		acceleration.x += acc.x;
-		acceleration.y += acc.y;
+	void accelerate(glm::vec2 acc) {
+		acceleration += acc;
 	}
 
 	void update(float timeDelta) {
-		ImVec2 velocity = { positionCurrent.x - positionOld.x, positionCurrent.y - positionOld.y };
+		glm::vec2 velocity = positionCurrent - positionOld;
+		glm::vec2 newPosition = positionCurrent + velocity + acceleration * timeDelta * timeDelta;
 		positionOld = positionCurrent;
-		ImVec2 moveDist = { timeDelta * timeDelta * acceleration.x + velocity.x, timeDelta * timeDelta * acceleration.y + velocity.y };
-		move(moveDist);
-		acceleration = {0, 0};
+		positionCurrent = newPosition;
+		acceleration = glm::vec2(0);
 		
-		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius - 50) {
-			positionCurrent.y = SIMULATION_WINDOW_HEIGHT - radius - 50;
+		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius) {
+			positionCurrent.y = SIMULATION_WINDOW_HEIGHT - radius;
 		}
-		if (positionCurrent.y < radius + 50) {
-			positionCurrent.y = radius + 50;
+		if (positionCurrent.y < radius) {
+			positionCurrent.y = radius;
 		}
-		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius - 50) {
-			positionCurrent.x = SIMULATION_WINDOW_WIDTH - radius - 50;
+		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius) {
+			positionCurrent.x = SIMULATION_WINDOW_WIDTH - radius;
 		}
-		if (positionCurrent.x < radius + 50) {
-			positionCurrent.x = radius + 50;
+		if (positionCurrent.x < radius) {
+			positionCurrent.x = radius;
 		}
 	}
 };
@@ -85,8 +81,8 @@ struct Ball {
 std::vector<Ball*> balls;
 
 class BallShooter {
-	ImVec2 position;
-	ImVec2 exitVelocity;
+	glm::vec2 position;
+	glm::vec2 exitVelocity;
 
 	float timeSinceLastShot = REFRACTORY_TIME;
 
@@ -94,13 +90,13 @@ class BallShooter {
 		balls.push_back(new Ball(position, BALL_SIZE, exitVelocity));
 	}
 public:
-	BallShooter(ImVec2 p, ImVec2 dir, float mag) {
+	BallShooter(glm::vec2 p, glm::vec2 dir, float mag) {
 		position = p;
-		exitVelocity = ImVec2(mag * dir.x, mag * dir.y);
+		exitVelocity = mag * dir;
 	}
 
 	void update(float timeDelta) {
-		//if (timeDelta > FPS_60_FRAME_TIME) return;
+		if (timeDelta > FPS_60_FRAME_TIME) return;
 		timeSinceLastShot += timeDelta;
 		if (timeSinceLastShot > REFRACTORY_TIME) {
 			shoot();
@@ -134,12 +130,14 @@ void handleCollisions() {
 	for (Ball* ball1 : balls) {
 		for (Ball* ball2 : balls) {
 			if (ball1 != ball2) {
-				float dx = ball2->positionCurrent.x - ball1->positionCurrent.x;
-				float dy = ball2->positionCurrent.y - ball1->positionCurrent.y;
-				float dist = sqrt(dx * dx + dy * dy);
-				if (dist < ball1->radius + ball2->radius) {
-					ball1->move({ dx/-2, dy/-2 });
-					ball2->move({ dx / 2, dy / 2 });
+				glm::vec2 collisionAxis = ball1->positionCurrent - ball2->positionCurrent;
+				float dist = glm::length(collisionAxis);
+				float minDist = ball1->radius + ball2->radius;
+				if (dist < minDist) {
+					glm::vec2 normalizedAxis = collisionAxis / dist;
+					float delta = minDist - dist;
+					ball1->positionCurrent += .5f * delta * normalizedAxis;
+					ball2->positionCurrent -= .5f * delta * normalizedAxis;
 				}
 			}
 		}
@@ -148,7 +146,7 @@ void handleCollisions() {
 
 int main()
 {
-	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 2);
+	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 1.56);
 
 	// glfw: initialize and configure
 	// ------------------------------
