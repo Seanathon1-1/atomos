@@ -14,8 +14,11 @@
 #include <iostream>
 
 #define GRAVITAIONAL_FORCE 96
-#define REFRACTORY_TIME 125
-#define BALL_SIZE 8
+#define REFRACTORY_TIME 45
+#define BALL_SIZE 2
+
+#define SIMULATION_WINDOW_WIDTH 800
+#define SIMULATION_WINDOW_HEIGHT 500
 
 #define FPS_60_FRAME_TIME 1.f / 60.f
 
@@ -23,8 +26,8 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
 bool debug = true;
 std::chrono::steady_clock::time_point timeCurrent;
@@ -62,7 +65,20 @@ struct Ball {
 		positionOld = positionCurrent;
 		ImVec2 moveDist = { timeDelta * timeDelta * acceleration.x + velocity.x, timeDelta * timeDelta * acceleration.y + velocity.y };
 		move(moveDist);
-		acceleration = {};
+		acceleration = {0, 0};
+		
+		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius - 50) {
+			positionCurrent.y = SIMULATION_WINDOW_HEIGHT - radius - 50;
+		}
+		if (positionCurrent.y < radius + 50) {
+			positionCurrent.y = radius + 50;
+		}
+		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius - 50) {
+			positionCurrent.x = SIMULATION_WINDOW_WIDTH - radius - 50;
+		}
+		if (positionCurrent.x < radius + 50) {
+			positionCurrent.x = radius + 50;
+		}
 	}
 };
 
@@ -95,23 +111,12 @@ public:
 
 
 void showBallsWindow() {
-	ImGui::Begin("balls");
+	ImGui::SetNextWindowSize({ SIMULATION_WINDOW_WIDTH, SIMULATION_WINDOW_HEIGHT });
+	ImGui::Begin("balls", 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar);
 	for (Ball* ball : balls) {
 		ImVec2 posWindowOffset = ImGui::GetWindowPos();
 		ImVec2 posBallOffset = { ball->positionCurrent.x + posWindowOffset.x, ball->positionCurrent.y + posWindowOffset.y };
 		ImGui::GetWindowDrawList()->AddCircleFilled(posBallOffset, ball->radius, ball->color);
-		if (ball->positionCurrent.y + ball->radius > ImGui::GetWindowHeight()) {
-			ball->positionCurrent.y = ImGui::GetWindowHeight() - ball->radius;
-		}
-		if (ball->positionCurrent.y - ball->radius < 0) {
-			ball->positionCurrent.y = ball->radius;
-		}
-		if (ball->positionCurrent.x + ball->radius > ImGui::GetWindowWidth()) {
-			ball->positionCurrent.x = ImGui::GetWindowWidth() - ball->radius;
-		}
-		if (ball->positionCurrent.x - ball->radius < 0) {
-			ball->positionCurrent.x = ball->radius;
-		}
 	}
 
 	ImGui::End();
@@ -143,7 +148,7 @@ void handleCollisions() {
 
 int main()
 {
-	BallShooter* shooter = new BallShooter({ 50, 50 }, { 1, 0 }, 2);
+	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 2);
 
 	// glfw: initialize and configure
 	// ------------------------------
@@ -214,7 +219,7 @@ int main()
 		timeCurrent = std::chrono::steady_clock::now();
 		delta = timeCurrent - timeLastFrame;
 		deltaTime = delta.count();
-		frames = 1.f / deltaTime;
+		frames = 1.f / deltaTime / 1000;
 
 		timeLastFrame = timeCurrent;
 
