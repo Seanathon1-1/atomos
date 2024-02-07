@@ -15,13 +15,12 @@
 #include <iostream>
 
 #define GRAVITAIONAL_FORCE 96
-#define REFRACTORY_TIME 125
-#define BALL_SIZE 8
+#define REFRACTORY_TIME .045f
+#define BALL_SIZE 4
 
 #define SIMULATION_WINDOW_WIDTH 800
-#define SIMULATION_WINDOW_HEIGHT 500
-
-#define FPS_60_FRAME_TIME 1.f / 60.f * 1000.f
+#define SIMULATION_WINDOW_HEIGHT 800
+#define ELASTICITY .6f
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -30,7 +29,8 @@ void processInput(GLFWwindow *window);
 const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
-bool debug = true;
+bool debug;
+
 std::chrono::steady_clock::time_point timeCurrent;
 std::chrono::steady_clock::time_point timeLastFrame;
 std::chrono::duration<double, std::milli> delta;
@@ -63,17 +63,26 @@ struct Ball {
 		positionCurrent = newPosition;
 		acceleration = glm::vec2(0);
 		
+		float correctedPosition;
 		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius) {
-			positionCurrent.y = SIMULATION_WINDOW_HEIGHT - radius;
+			correctedPosition = SIMULATION_WINDOW_HEIGHT - radius;
+			positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
+			positionCurrent.y = correctedPosition;
 		}
 		if (positionCurrent.y < radius) {
-			positionCurrent.y = radius;
+			correctedPosition = radius;
+			positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
+			positionCurrent.y = correctedPosition;
 		}
 		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius) {
-			positionCurrent.x = SIMULATION_WINDOW_WIDTH - radius;
+			correctedPosition = SIMULATION_WINDOW_HEIGHT - radius;
+			positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
+			positionCurrent.x = correctedPosition;
 		}
 		if (positionCurrent.x < radius) {
-			positionCurrent.x = radius;
+			correctedPosition = radius;
+			positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
+			positionCurrent.x = correctedPosition;
 		}
 	}
 };
@@ -85,6 +94,7 @@ class BallShooter {
 	glm::vec2 exitVelocity;
 
 	float timeSinceLastShot = REFRACTORY_TIME;
+	bool keepShooting = true;
 
 	void shoot() {
 		balls.push_back(new Ball(position, BALL_SIZE, exitVelocity));
@@ -96,12 +106,20 @@ public:
 	}
 
 	void update(float timeDelta) {
-		if (timeDelta > FPS_60_FRAME_TIME) return;
 		timeSinceLastShot += timeDelta;
+		if (!keepShooting) return;
 		if (timeSinceLastShot > REFRACTORY_TIME) {
 			shoot();
 			timeSinceLastShot = 0.f;
 		}
+	}
+
+	void start() {
+		keepShooting = true;
+	}
+
+	void stop() {
+		keepShooting = false;
 	}
 };
 
@@ -146,6 +164,10 @@ void handleCollisions() {
 
 int main()
 {
+#ifdef DEBUG
+	debug = 1;
+#endif
+
 	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 1.56);
 
 	// glfw: initialize and configure
@@ -212,19 +234,20 @@ int main()
 		// Update and Render additional Platform Windows
 		ImGui::UpdatePlatformWindows();
 		ImGui::RenderPlatformWindowsDefault();
-
 	
 		timeCurrent = std::chrono::steady_clock::now();
 		delta = timeCurrent - timeLastFrame;
-		deltaTime = delta.count();
-		frames = 1.f / deltaTime / 1000;
+		deltaTime = delta.count() / 1000;
+		frames = 1 / deltaTime;
 
 		timeLastFrame = timeCurrent;
 
+		if (frames < 60) { shooter->stop(); }
+		if (frames > 75) { shooter->start(); }
 		shooter->update(deltaTime);
 
 		for (auto ball : balls) {
-			ball->update(deltaTime / 1000);
+			ball->update(deltaTime);
 			ball->accelerate({ 0, GRAVITAIONAL_FORCE });
 		}
 
