@@ -1,7 +1,7 @@
 // Taken from https://learnopengl.com/code_viewer_gh.php?code=src/1.getting_started/1.2.hello_window_clear/hello_window_clear.cpp and modified to work with glfw
 // All credit go to Joey De Vries: https://joeydevries.com/#home author of Learn OpenGL.
 // Modified by: Jakob Törmä Ruhl
-// Functionality extended by Síofra McCarthy
+/* Functionality extended by Síofra McCarthy */
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -15,12 +15,15 @@
 #include <iostream>
 
 #define GRAVITAIONAL_FORCE 96
-#define REFRACTORY_TIME .045f
+#define REFRACTORY_TIME .065f
 #define BALL_SIZE 4
 
 #define SIMULATION_WINDOW_WIDTH 800
-#define SIMULATION_WINDOW_HEIGHT 800
+#define SIMULATION_WINDOW_HEIGHT 700
 #define ELASTICITY .6f
+
+#define IMGUI_FRAME_MARGIN 4
+#define DELTA_TIME 1.f / 60.f
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -37,6 +40,10 @@ std::chrono::duration<double, std::milli> delta;
 float frames = 0.f;
 float deltaTime = 0.f;
 
+bool useCustomDT = false;
+float customDeltaTime = 0.006;
+
+/* My substitute for Verlet Objects */
 struct Ball {
 	glm::vec2 positionCurrent;
 	glm::vec2 positionOld;
@@ -64,23 +71,23 @@ struct Ball {
 		acceleration = glm::vec2(0);
 		
 		float correctedPosition;
-		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius) {
-			correctedPosition = SIMULATION_WINDOW_HEIGHT - radius;
+		if (positionCurrent.y > SIMULATION_WINDOW_HEIGHT - radius - IMGUI_FRAME_MARGIN) {
+			correctedPosition = SIMULATION_WINDOW_HEIGHT - radius - IMGUI_FRAME_MARGIN;
 			positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
 			positionCurrent.y = correctedPosition;
 		}
-		if (positionCurrent.y < radius) {
-			correctedPosition = radius;
+		if (positionCurrent.y < radius + IMGUI_FRAME_MARGIN) {
+			correctedPosition = radius + IMGUI_FRAME_MARGIN;
 			positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
 			positionCurrent.y = correctedPosition;
 		}
-		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius) {
-			correctedPosition = SIMULATION_WINDOW_HEIGHT - radius;
+		if (positionCurrent.x > SIMULATION_WINDOW_WIDTH - radius - IMGUI_FRAME_MARGIN) {
+			correctedPosition = SIMULATION_WINDOW_WIDTH - radius - IMGUI_FRAME_MARGIN;
 			positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
 			positionCurrent.x = correctedPosition;
 		}
-		if (positionCurrent.x < radius) {
-			correctedPosition = radius;
+		if (positionCurrent.x < radius + IMGUI_FRAME_MARGIN) {
+			correctedPosition = radius + IMGUI_FRAME_MARGIN;
 			positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
 			positionCurrent.x = correctedPosition;
 		}
@@ -88,7 +95,7 @@ struct Ball {
 };
 
 std::vector<Ball*> balls;
-
+/* Does what you'd expect: shoots Balls */
 class BallShooter {
 	glm::vec2 position;
 	glm::vec2 exitVelocity;
@@ -96,8 +103,8 @@ class BallShooter {
 	float timeSinceLastShot = REFRACTORY_TIME;
 	bool keepShooting = true;
 
-	void shoot() {
-		balls.push_back(new Ball(position, BALL_SIZE, exitVelocity));
+	void shoot(float timeDelta) {
+		balls.push_back(new Ball(position, BALL_SIZE, exitVelocity * timeDelta));
 	}
 public:
 	BallShooter(glm::vec2 p, glm::vec2 dir, float mag) {
@@ -109,8 +116,8 @@ public:
 		timeSinceLastShot += timeDelta;
 		if (!keepShooting) return;
 		if (timeSinceLastShot > REFRACTORY_TIME) {
-			shoot();
-			timeSinceLastShot = 0.f;
+			shoot(timeDelta);
+			timeSinceLastShot -= REFRACTORY_TIME;
 		}
 	}
 
@@ -125,8 +132,9 @@ public:
 
 
 void showBallsWindow() {
-	ImGui::SetNextWindowSize({ SIMULATION_WINDOW_WIDTH, SIMULATION_WINDOW_HEIGHT });
-	ImGui::Begin("balls", 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar);
+	ImGui::SetNextWindowSize({ SIMULATION_WINDOW_WIDTH + IMGUI_FRAME_MARGIN, SIMULATION_WINDOW_HEIGHT + IMGUI_FRAME_MARGIN });
+	ImGui::SetNextWindowContentSize({ SIMULATION_WINDOW_WIDTH, SIMULATION_WINDOW_HEIGHT });
+	ImGui::Begin("balls", 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
 	for (Ball* ball : balls) {
 		ImVec2 posWindowOffset = ImGui::GetWindowPos();
 		ImVec2 posBallOffset = { ball->positionCurrent.x + posWindowOffset.x, ball->positionCurrent.y + posWindowOffset.y };
@@ -141,6 +149,8 @@ void showDebugWindow() {
 	ImGui::Text("Frames: %d", (int)frames);
 	ImGui::Text("Objects: %d", balls.size());
 	ImGui::Text("Time Delta: %f", deltaTime);
+	//ImGui::Checkbox("Custom deltaTime", &useCustomDT);
+	//ImGui::DragFloat("Custom deltaTime value", &customDeltaTime, 0.00001f, 0.0005, 0.013, "%.4f");
 	ImGui::End();
 }
 
@@ -168,7 +178,7 @@ int main()
 	debug = 1;
 #endif
 
-	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 1.56);
+	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 280);
 
 	// glfw: initialize and configure
 	// ------------------------------
@@ -239,16 +249,17 @@ int main()
 		delta = timeCurrent - timeLastFrame;
 		deltaTime = delta.count() / 1000;
 		frames = 1 / deltaTime;
+		if (useCustomDT) deltaTime = customDeltaTime;
 
 		timeLastFrame = timeCurrent;
 
 		if (frames < 60) { shooter->stop(); }
 		if (frames > 75) { shooter->start(); }
-		shooter->update(deltaTime);
+		shooter->update(DELTA_TIME);
 
 		for (auto ball : balls) {
-			ball->update(deltaTime);
-			ball->accelerate({ 0, GRAVITAIONAL_FORCE });
+			ball->update(DELTA_TIME);
+			ball->accelerate(glm::vec2(0, GRAVITAIONAL_FORCE));
 		}
 
 		handleCollisions();
