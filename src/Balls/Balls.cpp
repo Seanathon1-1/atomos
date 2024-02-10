@@ -7,6 +7,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <GL\glew.h>
+#include <unordered_map>
 #include <GLFW/glfw3.h>
 #include "glm.hpp"
 
@@ -25,7 +26,7 @@
 #define IMGUI_FRAME_MARGIN 4
 #define DELTA_TIME 1.f / 60.f
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);	
 void processInput(GLFWwindow *window);
 
 // settings
@@ -43,12 +44,14 @@ float deltaTime = 0.f;
 bool useCustomDT = false;
 float customDeltaTime = 0.006;
 
+class GridContainer;
+GridContainer* grid;
 /* My substitute for Verlet Objects */
 struct Ball {
 	glm::vec2 positionCurrent;
 	glm::vec2 positionOld;
-	float radius;
 	glm::vec2 acceleration;
+	float radius;
 	uint32_t color;
 
 	Ball(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = 0xffff00ff) {
@@ -130,6 +133,35 @@ public:
 	}
 };
 
+class GridContainer {
+	uint8_t width;
+	uint8_t height;
+	std::vector <std::vector <Ball*>*> gridSquares;
+
+public:
+	GridContainer(uint8_t m, uint8_t n) {
+		width = m;
+		height = n;
+
+		for (int i = 0; i < m * n; i++) {
+			gridSquares.push_back(new std::vector<Ball*>());
+		}
+	}
+
+	~GridContainer() {
+		for (auto v : gridSquares) {
+			delete v;
+		}
+	}
+
+	bool insert(Ball* b, glm::u8vec2 position) {
+		if (position.x < 0 || position.x >= width || position.y < 0 || position.y >= height) return 0;
+		gridSquares.at(position.y * width + position.x)->push_back(b);
+		return 1;
+	}
+
+	
+};
 
 void showBallsWindow() {
 	ImGui::SetNextWindowSize({ SIMULATION_WINDOW_WIDTH + IMGUI_FRAME_MARGIN, SIMULATION_WINDOW_HEIGHT + IMGUI_FRAME_MARGIN });
@@ -155,6 +187,13 @@ void showDebugWindow() {
 }
 
 void handleCollisions() {
+
+	
+	for (Ball* ball : balls) {
+		glm::vec2 gridIndex = ball->positionCurrent / (float)BALL_SIZE;
+		grid->insert(ball, gridIndex);
+	}
+
 	for (Ball* ball1 : balls) {
 		for (Ball* ball2 : balls) {
 			if (ball1 != ball2) {
@@ -179,6 +218,9 @@ int main()
 #endif
 
 	BallShooter* shooter = new BallShooter({ 75, 75 }, { 1, 0 }, 280);
+	uint8_t gridWidth = SIMULATION_WINDOW_WIDTH / BALL_SIZE;
+	uint8_t gridHeight = SIMULATION_WINDOW_HEIGHT / BALL_SIZE;
+	grid = new GridContainer(gridWidth, gridHeight);
 
 	// glfw: initialize and configure
 	// ------------------------------
@@ -272,6 +314,7 @@ int main()
 	for (Ball* ball : balls) {
 		delete ball;
 	}
+	delete grid;
 
 	// glfw: terminate, clearing all previously allocated GLFW resources.
 	// ------------------------------------------------------------------
