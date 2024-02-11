@@ -138,6 +138,14 @@ class GridContainer {
 	uint8_t height;
 	std::vector <std::vector <Ball*>*> gridSquares;
 
+
+	std::vector<Ball*>* getCell(int x, int y) {
+		return gridSquares.at(y * width + x);
+	}
+
+	std::vector<Ball*>* getCell(glm::u8vec2 pos) {
+		return getCell(pos.x, pos.y);
+	}
 public:
 	GridContainer(uint8_t m, uint8_t n) {
 		width = m;
@@ -156,11 +164,52 @@ public:
 
 	bool insert(Ball* b, glm::u8vec2 position) {
 		if (position.x < 0 || position.x >= width || position.y < 0 || position.y >= height) return 0;
-		gridSquares.at(position.y * width + position.x)->push_back(b);
+		getCell(position)->push_back(b);
 		return 1;
 	}
 
+	void clear() {
+		for (auto v : gridSquares) {
+			v->clear();
+		}
+	}
 	
+	void checkCellCollisions(std::vector<Ball*>* cell1, std::vector<Ball*>* cell2) {
+		for (Ball* ball1 : *cell1) {
+			for (Ball* ball2 : *cell2) {
+				if (ball1 != ball2) {
+					glm::vec2 collisionAxis = ball1->positionCurrent - ball2->positionCurrent;
+					float dist = glm::length(collisionAxis);
+					float minDist = ball1->radius + ball2->radius;
+					if (dist < minDist) {
+						glm::vec2 normalizedAxis = collisionAxis / dist;
+						float delta = minDist - dist;
+						ball1->positionCurrent += .5f * delta * normalizedAxis;
+						ball2->positionCurrent -= .5f * delta * normalizedAxis;
+					}
+				}
+			}
+		}
+	}
+
+	void handleCollisions() {
+		for (int j = 1; j < height - 1; j++) {
+			for (int i = 1; i < width - 1; i++) {
+				std::vector<Ball*>* currentCell = getCell(i, j);
+				if (currentCell->size() == 0) continue;
+				for (int dj = -1; dj <= 1; dj++) {
+					for (int di = -1; di <= 1; di++) {
+						std::vector<Ball*>* adjacentCell = getCell(i + di, j + dj);
+						if (adjacentCell->size() == 0) continue;
+						if (debug) {
+							std::cerr << "Current cell size: " << currentCell->size() << " | Adjacent cell size: " << adjacentCell->size() << std::endl;
+						}
+						checkCellCollisions(currentCell, adjacentCell);
+					}
+				}
+			}
+		}
+	}
 };
 
 void showBallsWindow() {
@@ -187,28 +236,15 @@ void showDebugWindow() {
 }
 
 void handleCollisions() {
-
+	grid->clear();
 	
 	for (Ball* ball : balls) {
 		glm::vec2 gridIndex = ball->positionCurrent / (float)BALL_SIZE;
+		std::cerr << "Adding ball to index (" << gridIndex.x << ", " << gridIndex.y << ")\n";
 		grid->insert(ball, gridIndex);
 	}
 
-	for (Ball* ball1 : balls) {
-		for (Ball* ball2 : balls) {
-			if (ball1 != ball2) {
-				glm::vec2 collisionAxis = ball1->positionCurrent - ball2->positionCurrent;
-				float dist = glm::length(collisionAxis);
-				float minDist = ball1->radius + ball2->radius;
-				if (dist < minDist) {
-					glm::vec2 normalizedAxis = collisionAxis / dist;
-					float delta = minDist - dist;
-					ball1->positionCurrent += .5f * delta * normalizedAxis;
-					ball2->positionCurrent -= .5f * delta * normalizedAxis;
-				}
-			}
-		}
-	}
+	grid->handleCollisions();
 }
 
 int main()
@@ -300,8 +336,8 @@ int main()
 		shooter->update(DELTA_TIME);
 
 		for (auto ball : balls) {
-			ball->update(DELTA_TIME);
 			ball->accelerate(glm::vec2(0, GRAVITAIONAL_FORCE));
+			ball->update(DELTA_TIME);
 		}
 
 		handleCollisions();
