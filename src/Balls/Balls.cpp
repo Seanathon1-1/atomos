@@ -57,9 +57,10 @@ struct Ball {
 	Ball(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = 0xffff00ff) {
 		positionCurrent = pos;
 		positionOld = { pos.x - v.x, pos.y - v.y };
+		acceleration = glm::vec2(0);
 		radius = r;
 		color = col;
-		acceleration = glm::vec2(0);
+
 	}
 
 	void accelerate(glm::vec2 acc) {
@@ -133,7 +134,16 @@ public:
 	}
 };
 
+class GridCell {
+	static const uint8_t max_capacity = 8;
+	static const uint8_t max_index = max_capacity - 1;
+	
+	uint32_t objects[max_capacity] = {};
+	uint8_t num_objects = 0;
+};
+
 class GridContainer {
+	static uint32_t nextID;
 	uint8_t width;
 	uint8_t height;
 	std::vector <std::vector <Ball*>*> gridSquares;
@@ -202,7 +212,7 @@ public:
 						std::vector<Ball*>* adjacentCell = getCell(i + di, j + dj);
 						if (adjacentCell->size() == 0) continue;
 						if (debug) {
-							std::cerr << "Current cell size: " << currentCell->size() << " | Adjacent cell size: " << adjacentCell->size() << std::endl;
+							//std::cerr << "Current cell size: " << currentCell->size() << " | Adjacent cell size: " << adjacentCell->size() << std::endl;
 						}
 						checkCellCollisions(currentCell, adjacentCell);
 					}
@@ -240,7 +250,7 @@ void handleCollisions() {
 	
 	for (Ball* ball : balls) {
 		glm::vec2 gridIndex = ball->positionCurrent / (float)BALL_SIZE;
-		std::cerr << "Adding ball to index (" << gridIndex.x << ", " << gridIndex.y << ")\n";
+		//std::cerr << "Adding ball to index (" << gridIndex.x << ", " << gridIndex.y << ")\n";
 		grid->insert(ball, gridIndex);
 	}
 
