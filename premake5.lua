@@ -25,7 +25,7 @@ project "Balls" -- Name of project
     --location of source files to include. Here we include All files ending with .h and .cpp
     --in the folder Minimal Example even files in subfolders.
     files { 
-	    "./src/Balls/**.h", 
+	    "./src/Balls/**.hpp", 
 	    "./src/Balls/**.cpp",
 	    "./lib/ImGui/*.cpp",
 	    "./lib/ImGui/*.h",
