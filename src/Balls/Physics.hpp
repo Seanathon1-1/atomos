@@ -8,11 +8,12 @@
 class PhysicsController;
 
 struct PhysicsObject {
-	glm::vec2 positionCurrent;
-	glm::vec2 positionOld;
+	glm::vec2 position;
+	glm::vec2 velocity;
 	glm::vec2 acceleration;
 	float radius;
 	uint32_t color;
+	float mass;
 
 	PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col);
 	void accelerate(glm::vec2 acc);
@@ -65,7 +66,7 @@ class PhysicsController {
 	uint16_t simulationHeight;
 	CollisionGrid* grid;
 
-
+	void handleCollisionsIterations(uint8_t iterations);
 	void handleCollisions();
 	void addSpawner(PhysicsController* ctrlr, glm::vec2 position, glm::vec2 direction, float magnitude);
 	void addSpawnerN(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag, uint8_t n);

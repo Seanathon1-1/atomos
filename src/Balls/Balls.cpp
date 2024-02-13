@@ -20,7 +20,6 @@
 #define SIMULATION_WINDOW_WIDTH 800
 #define SIMULATION_WINDOW_HEIGHT 700
 
-#define DELTA_TIME 1.f / 60.f
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);	
 void processInput(GLFWwindow *window);
@@ -133,7 +132,7 @@ int main()
 
 		timeLastFrame = timeCurrent;
 
-		physics->update(DELTA_TIME, frames);
+		physics->update(deltaTime, frames);
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		// -------------------------------------------------------------------------------

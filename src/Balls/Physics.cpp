@@ -1,21 +1,24 @@
 #include "Physics.hpp"
 #include "imgui.h"
 
-#define ELASTICITY .1f
+#define ELASTICITY .5f
 #define IMGUI_FRAME_MARGIN 4
 #define GRAVITAIONAL_FORCE 50
-#define SPAWNER_EXIT_SPEED 120
+#define SPAWNER_EXIT_SPEED 150
 #define SPAWNER_OFFSET glm::vec2(0, 10)
 #define OBJECT_SIZE 4
+#define DENSITY 2
+#define COLLISION_ITERATIONS 12
 
 class PhysicsController;
 
 PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = 0xffff00ff) {
-	positionCurrent = pos;
-	positionOld = { pos.x - v.x, pos.y - v.y };
+	position = pos;
+	velocity = v;
 	acceleration = glm::vec2(0);
 	radius = r;
 	color = col;
+	mass = r * DENSITY;
 }
 
 void PhysicsObject::accelerate(glm::vec2 acc) {
@@ -23,32 +26,26 @@ void PhysicsObject::accelerate(glm::vec2 acc) {
 }
 
 void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
-	glm::vec2 velocity = positionCurrent - positionOld;
-	glm::vec2 newPosition = positionCurrent + velocity + acceleration * timeDelta * timeDelta;
-	positionOld = positionCurrent;
-	positionCurrent = newPosition;
+	velocity += acceleration * timeDelta;
+	position += velocity * timeDelta;
 	acceleration = glm::vec2(0);
 
-	float correctedPosition;
-	if (positionCurrent.y > simHeight - radius - IMGUI_FRAME_MARGIN) {
-		correctedPosition = simHeight - radius - IMGUI_FRAME_MARGIN;
-		positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
-		positionCurrent.y = correctedPosition;
+	if (position.y > simHeight - radius - IMGUI_FRAME_MARGIN) {
+		position.y = simHeight - radius - IMGUI_FRAME_MARGIN;
+		velocity.y *= -ELASTICITY;
 	}
-	if (positionCurrent.y < radius + IMGUI_FRAME_MARGIN) {
-		correctedPosition = radius + IMGUI_FRAME_MARGIN;
-		positionOld.y = (positionCurrent.y - positionOld.y) * ELASTICITY + correctedPosition;
-		positionCurrent.y = correctedPosition;
+	if (position.y < radius + IMGUI_FRAME_MARGIN) {
+		position.y = radius + IMGUI_FRAME_MARGIN;
+		velocity.y *= -ELASTICITY;
 	}
-	if (positionCurrent.x > simWidth - radius - IMGUI_FRAME_MARGIN) {
-		correctedPosition = simWidth - radius - IMGUI_FRAME_MARGIN;
-		positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
-		positionCurrent.x = correctedPosition;
+
+	if (position.x > simWidth - radius - IMGUI_FRAME_MARGIN) {
+		position.x = simWidth - radius - IMGUI_FRAME_MARGIN;
+		velocity.x *= -ELASTICITY;
 	}
-	if (positionCurrent.x < radius + IMGUI_FRAME_MARGIN) {
-		correctedPosition = radius + IMGUI_FRAME_MARGIN;
-		positionOld.x = (positionCurrent.x - positionOld.x) * ELASTICITY + correctedPosition;
-		positionCurrent.x = correctedPosition;
+	if (position.x < radius + IMGUI_FRAME_MARGIN) {
+		position.x = radius + IMGUI_FRAME_MARGIN;
+		velocity.x *= -ELASTICITY;
 	}
 }
 typedef std::vector<PhysicsObject*> PhysObjs;
@@ -77,14 +74,25 @@ void CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cel
 		for (int j = 0; j < cell2->numObjects; j++) {
 			PhysicsObject* obj2 = cell2->objects[j];
 			if (obj1 != obj2) {
-				glm::vec2 collisionAxis = obj1->positionCurrent - obj2->positionCurrent;
-				float dist = glm::length(collisionAxis);
+				glm::vec2 distanceVector = obj1->position - obj2->position;
+				float dist2 = glm::dot(distanceVector, distanceVector);
 				float minDist = obj1->radius + obj2->radius;
-				if (dist < minDist) {
-					glm::vec2 normalizedAxis = collisionAxis / dist;
+				if (dist2 < minDist * minDist) {
+					float dist = sqrtf(dist2);
+					glm::vec2 collisionAxis = distanceVector / dist;
+					glm::vec2 tangentAxis = glm::vec2(-collisionAxis.y, collisionAxis.x);
+					
 					float delta = minDist - dist;
-					obj1->positionCurrent += .5f * delta * normalizedAxis;
-					obj2->positionCurrent -= .5f * delta * normalizedAxis;
+					obj1->position += .5f * delta * collisionAxis;
+					obj2->position -= .5f * delta * collisionAxis;
+
+					float factorMass1 = 2 * obj1->mass / (obj1->mass + obj2->mass);
+					float factorMass2 = 2 * obj2->mass / (obj1->mass + obj2->mass);
+					glm::vec2 positionDiffVector = obj1->position - obj2->position;
+					glm::vec2 velocityDiffVector = obj1->velocity - obj2->velocity;
+					
+					obj1->velocity -= factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
+					obj2->velocity -= factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
 				}
 			}
 		}
@@ -117,13 +125,13 @@ ObjectSpawner<T>::ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2
 
 template <typename T>
 void ObjectSpawner<T>::shoot(float timeDelta) {
-	controller->addObject(new T(position, OBJECT_SIZE, exitVelocity * timeDelta));
+	controller->addObject(new T(position, OBJECT_SIZE, exitVelocity));
 }
 
 template <typename T>
 void ObjectSpawner<T>::update(float timeDelta) {
-	timeSinceLastShot += timeDelta;
 	if (!keepShooting) return;
+	timeSinceLastShot += timeDelta;
 	if (timeSinceLastShot > REFRACTORY_TIME) {
 		shoot(timeDelta);
 		timeSinceLastShot -= REFRACTORY_TIME;
@@ -154,7 +162,7 @@ PhysicsController::PhysicsController(uint16_t simulationWidth_, uint16_t simulat
 
 	grid = new CollisionGrid(simulationWidth / OBJECT_SIZE, simulationHeight / OBJECT_SIZE);
 
-	addSpawnerN(this, { 75, 75 }, { 1, 0 }, SPAWNER_EXIT_SPEED, 2);
+	addSpawnerN(this, { 75, 75 }, { 1, 0 }, SPAWNER_EXIT_SPEED, 5);
 }
 
 PhysicsController::~PhysicsController() {
@@ -181,10 +189,9 @@ void PhysicsController::startSpawners() {
 }
 
 void PhysicsController::update(float dt, float frames) {
-	if (frames < 60) { stopSpawners(); }
-	if (frames > 75) { startSpawners(); }
+	if (frames < 50) { stopSpawners(); }
+	if (frames > 80) { startSpawners(); }
 	
-	grid->clear();
 	for (auto spawner : spawners) {
 		spawner->update(dt);
 	}
@@ -192,13 +199,17 @@ void PhysicsController::update(float dt, float frames) {
 		obj->accelerate(glm::vec2(0, GRAVITAIONAL_FORCE));
 		obj->update(dt, simulationWidth, simulationHeight);
 	}
-	handleCollisions();
+	handleCollisionsIterations(COLLISION_ITERATIONS);
+}
+
+void PhysicsController::handleCollisionsIterations(uint8_t iterations) {
+	for (int i{ iterations }; i--;) handleCollisions();
 }
 
 void PhysicsController::handleCollisions() {
+	grid->clear();
 	for (PhysicsObject* obj : objects) {
-		glm::vec2 gridIndex = obj->positionCurrent / (float)OBJECT_SIZE;
-		//std::cerr << "Adding ball to index (" << gridIndex.x << ", " << gridIndex.y << ")\n";
+		glm::vec2 gridIndex = obj->position / (float)OBJECT_SIZE;
 		grid->insert(obj, gridIndex);
 	}
 	grid->handleCollisions();
@@ -210,7 +221,7 @@ void PhysicsController::displaySimulation() {
 	ImGui::Begin("balls", 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
 	for (PhysicsObject* obj : objects) {
 		ImVec2 posWindowOffset = ImGui::GetWindowPos();
-		ImVec2 posBallOffset = { obj->positionCurrent.x + posWindowOffset.x, obj->positionCurrent.y + posWindowOffset.y };
+		ImVec2 posBallOffset = { obj->position.x + posWindowOffset.x, obj->position.y + posWindowOffset.y };
 		ImGui::GetWindowDrawList()->AddCircleFilled(posBallOffset, obj->radius, obj->color);
 	}
 
