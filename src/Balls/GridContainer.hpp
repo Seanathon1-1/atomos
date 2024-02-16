@@ -8,8 +8,8 @@ template <typename T>
 class GridContainer {
 protected:
 	static uint32_t nextID;
-	uint8_t width;
-	uint8_t height;
+	uint16_t width;
+	uint16_t height;
 	std::template vector<T*> gridSquares;
 
 	T* getCell(int x, int y) { return gridSquares.at(y * width + x); }
@@ -26,7 +26,7 @@ public:
 	~GridContainer() {	for (T* v : gridSquares) delete v; }
 	template <typename TObject>bool insert(TObject* b, glm::u8vec2 position) {
 		if (position.x < 0 || position.x >= width || position.y < 0 || position.y >= height) return 0;
-		getCell(position)->insert(b);
+		assert(getCell(position)->insert(b));
 		return 1;
 	}
 	void clear() { for (T* v : gridSquares) v->clear(); }

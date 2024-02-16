@@ -4,6 +4,7 @@
 #include "GridContainer.hpp"
 
 #define REFRACTORY_TIME .085f
+#define MAX_COLLISION_NODE_OBJECTS 16
 
 class PhysicsController;
 
@@ -23,20 +24,21 @@ typedef std::vector<PhysicsObject*> PhysObjs;
 
 
 struct CollisionNode {
-	static constexpr uint8_t maxObjects = 8;
+	static constexpr uint8_t maxObjects = MAX_COLLISION_NODE_OBJECTS;
 	PhysicsObject* objects[maxObjects];
 	uint8_t numObjects;
 
-	size_t count();
+	size_t count() const;
 	bool insert(PhysicsObject* obj);
 	void clear();
 };
 
 class CollisionGrid : public GridContainer<CollisionNode> {
-
+	using GridContainer<CollisionNode>::width;
 
 public:
 	CollisionGrid(uint16_t m, uint16_t n);
+	void checkCollision(PhysicsObject* obj1, PhysicsObject* obj2);
 	void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
 	void handleCollisions();
 };
@@ -77,6 +79,6 @@ public:
 	void addObject(PhysicsObject* obj);
 	void stopSpawners();
 	void startSpawners();
-	void update(float dt, float frames);
+	void update(float dt);
 	void displaySimulation();
 };

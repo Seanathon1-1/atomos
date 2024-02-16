@@ -30,6 +30,7 @@ const unsigned int SCR_HEIGHT = 1080;
 
 bool debug;
 
+// timing
 std::chrono::steady_clock::time_point timeCurrent;
 std::chrono::steady_clock::time_point timeLastFrame;
 std::chrono::duration<double, std::milli> delta;
@@ -132,7 +133,7 @@ int main()
 
 		timeLastFrame = timeCurrent;
 
-		physics->update(deltaTime, frames);
+		physics->update(deltaTime);
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		// -------------------------------------------------------------------------------
