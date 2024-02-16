@@ -12,6 +12,7 @@
 #define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
 #define COLLISION_ITERATIONS 8
+#define THREAD_COUNT 16
 #define MAX_TIME_STEP (1.f / 60.f)
 
 #define USE_COLLISION_GRID
@@ -32,13 +33,9 @@ void PhysicsObject::accelerate(glm::vec2 acc) {
 	acceleration += acc;
 }
 
-void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
-	velocity += acceleration * timeDelta;
-	position += velocity * timeDelta;
-	acceleration = glm::vec2(0);
-
-	if (position.y > simHeight - radius - IMGUI_FRAME_MARGIN) {
-		position.y = simHeight - radius - IMGUI_FRAME_MARGIN;
+void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
+	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
+		position.y = height - radius - IMGUI_FRAME_MARGIN;
 		velocity.y *= -ELASTICITY;
 	}
 	if (position.y < radius + IMGUI_FRAME_MARGIN) {
@@ -46,8 +43,8 @@ void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeigh
 		velocity.y *= -ELASTICITY;
 	}
 
-	if (position.x > simWidth - radius - IMGUI_FRAME_MARGIN) {
-		position.x = simWidth - radius - IMGUI_FRAME_MARGIN;
+	if (position.x > width - radius - IMGUI_FRAME_MARGIN) {
+		position.x = width - radius - IMGUI_FRAME_MARGIN;
 		velocity.x *= -ELASTICITY;
 	}
 	if (position.x < radius + IMGUI_FRAME_MARGIN) {
@@ -55,8 +52,13 @@ void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeigh
 		velocity.x *= -ELASTICITY;
 	}
 }
-typedef std::vector<PhysicsObject*> PhysObjs;
 
+void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
+	velocity += acceleration * timeDelta;
+	position += velocity * timeDelta;
+	acceleration = glm::vec2(0);
+	enforceBoundaries(simWidth, simHeight);
+}
 
 size_t CollisionNode::count() const {
 	return numObjects;
@@ -72,7 +74,9 @@ void CollisionNode::clear() {
 	numObjects = 0;
 }
 
-CollisionGrid::CollisionGrid(uint16_t m, uint16_t n) : GridContainer<CollisionNode>(m, n) {}
+CollisionGrid::CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr) : GridContainer<CollisionNode>(m, n) {
+	controlledBy = ctrlr;
+}
 
 
 void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
@@ -96,6 +100,9 @@ void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 		glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
 		obj1->velocity -= velocityAdjustment1 * ELASTICITY;
 		obj2->velocity -= velocityAdjustment2 * ELASTICITY;
+
+		obj1->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
+		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
 	}
 }
 
@@ -165,7 +172,10 @@ PhysicsController::PhysicsController(uint16_t simulationWidth_, uint16_t simulat
 	simulationWidth = simulationWidth_;
 	simulationHeight = simulationHeight_;
 
-	grid = new CollisionGrid(floor(static_cast<float>(simulationWidth) / CELL_SIZE) + 3, floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 3);
+	uint16_t gridWidth = floor(static_cast<float>(simulationWidth) / CELL_SIZE) + 3;
+	uint16_t gridHeight = floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 3;
+
+	grid = new CollisionGrid(gridWidth, gridHeight, this);
 
 	addSpawnerN(this, { 75, 75 }, { 1, 0 }, SPAWNER_EXIT_SPEED, 5);
 }

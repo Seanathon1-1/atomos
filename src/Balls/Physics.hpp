@@ -18,6 +18,7 @@ struct PhysicsObject {
 
 	PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col);
 	void accelerate(glm::vec2 acc);
+	void enforceBoundaries(uint16_t width, uint16_t height);
 	void update(float timeDelta, uint16_t simWidth, uint16_t simHeight);
 };
 typedef std::vector<PhysicsObject*> PhysObjs;
@@ -34,10 +35,10 @@ struct CollisionNode {
 };
 
 class CollisionGrid : public GridContainer<CollisionNode> {
-	using GridContainer<CollisionNode>::width;
+	PhysicsController* controlledBy;
 
 public:
-	CollisionGrid(uint16_t m, uint16_t n);
+	CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
 	void checkCollision(PhysicsObject* obj1, PhysicsObject* obj2);
 	void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
 	void handleCollisions();
@@ -64,14 +65,18 @@ public:
 class PhysicsController {
 	std::vector<PhysicsObject*> objects;
 	std::vector<ObjectSpawner<PhysicsObject>*> spawners;
-	uint16_t simulationWidth;
-	uint16_t simulationHeight;
 	CollisionGrid* grid;
 
 	void handleCollisionsIterations(uint8_t iterations);
 	void handleCollisions();
 	void addSpawner(PhysicsController* ctrlr, glm::vec2 position, glm::vec2 direction, float magnitude);
 	void addSpawnerN(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag, uint8_t n);
+
+protected:
+	uint16_t simulationWidth;
+	uint16_t simulationHeight;
+
+
 public:
 	PhysicsController(uint16_t simulationWidth_, uint16_t simulationHeight_);
 	~PhysicsController();
@@ -81,4 +86,6 @@ public:
 	void startSpawners();
 	void update(float dt);
 	void displaySimulation();
+
+	friend class CollisionGrid;
 };
