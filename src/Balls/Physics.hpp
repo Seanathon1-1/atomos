@@ -4,7 +4,7 @@
 #include "GridContainer.hpp"
 
 #define REFRACTORY_TIME .085f
-#define MAX_COLLISION_NODE_OBJECTS 16
+#define MAX_COLLISION_NODE_OBJECTS 64
 
 class PhysicsController;
 
@@ -15,9 +15,12 @@ struct PhysicsObject {
 	float radius;
 	uint32_t color;
 	float mass;
+	glm::vec2 normalForce = glm::vec2(0);
 
 	PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col);
 	void accelerate(glm::vec2 acc);
+	void addNormalDirection(glm::vec2 dir);
+	void findNormal(uint16_t width, uint16_t height);
 	void enforceBoundaries(uint16_t width, uint16_t height);
 	void update(float timeDelta, uint16_t simWidth, uint16_t simHeight);
 };
@@ -41,7 +44,8 @@ public:
 	CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
 	void checkCollision(PhysicsObject* obj1, PhysicsObject* obj2);
 	void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
-	void handleCollisions();
+	void handleCollisions(int widthLow, int widthHigh);
+	void handleCollisionsThreaded();
 };
 
 template <typename T>
@@ -69,8 +73,8 @@ class PhysicsController {
 
 	void handleCollisionsIterations(uint8_t iterations);
 	void handleCollisions();
-	void addSpawner(PhysicsController* ctrlr, glm::vec2 position, glm::vec2 direction, float magnitude);
-	void addSpawnerN(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag, uint8_t n);
+	void addSpawner(glm::vec2 position, glm::vec2 direction, float magnitude);
+	void addSpawnerN(glm::vec2 p, glm::vec2 dir, float mag, uint8_t n);
 
 protected:
 	uint16_t simulationWidth;
