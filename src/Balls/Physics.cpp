@@ -1,32 +1,62 @@
 #include "Physics.hpp"
 #include "imgui.h"
+#include <iostream>
 #include <thread>
 
-#define ELASTICITY .99f
+#define ELASTICITY .6f
 #define IMGUI_FRAME_MARGIN 4
-#define GRAVITAIONAL_FORCE 40
-#define SPAWNER_EXIT_SPEED 100
+#define GRAVITAIONAL_FORCE 45
+#define SPAWNER_EXIT_SPEED 2.4f
 #define OBJECT_SIZE 4
 #define CELL_SIZE (OBJECT_SIZE * 2)
-#define MAX_OBJECTS 2500
+#define MAX_OBJECTS 3500
 #define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
-#define COLLISION_ITERATIONS 8
-#define THREAD_COUNT 16
+#define COLLISION_ITERATIONS 5
+#define THREAD_COUNT 2
 #define MAX_TIME_STEP (1.f / 60.f)
 
 #define USE_COLLISION_GRID
-#define USE_THREAD
+//#define USE_THREADS
 
 class PhysicsController;
+
+
+static uint16_t objCount = 0;
  
-PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = 0xffff00ff) {
+PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 	position = pos;
-	velocity = v;
+	position_old = pos - v;
 	acceleration = glm::vec2(0);
 	radius = r;
-	color = col;
 	mass = r * r * DENSITY;
+	
+	uint16_t hue = objCount % 360;
+	float fun = 1 - abs( fmod(static_cast<float>(hue) / 60.f, 2) - 1);
+	switch (hue / 60) {
+	case 0:
+		color = 0xFFFF0000 + (static_cast<int>(0xFF * fun) << 8);
+		break;
+	case 1:
+		color = 0xFF00FF00 + (static_cast<int>(0xFF * fun) << 16);
+		break;
+	case 2:
+		color = 0xFF00FF00 + static_cast<int>(0xFF * fun);
+		break;
+	case 3:
+		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 8);
+		break;
+	case 4:
+		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 16);
+		break;
+	case 5:
+		color = 0xFFFF0000 + static_cast<int>(0xFF * fun);
+		break;
+	default:
+		color = 0xFFFFFFFF;
+		break;
+	}
+	objCount++;
 }
 
 void PhysicsObject::accelerate(glm::vec2 acc) {
@@ -35,27 +65,32 @@ void PhysicsObject::accelerate(glm::vec2 acc) {
 
 void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
 	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
+		float yVelocity = position.y - position_old.y;
 		position.y = height - radius - IMGUI_FRAME_MARGIN;
-		velocity.y *= -ELASTICITY;
+		position_old.y = position.y + yVelocity;
 	}
 	if (position.y < radius + IMGUI_FRAME_MARGIN) {
+		float yVelocity = position.y - position_old.y;
 		position.y = radius + IMGUI_FRAME_MARGIN;
-		velocity.y *= -ELASTICITY;
+		position_old.y = position.y + yVelocity;
 	}
 
 	if (position.x > width - radius - IMGUI_FRAME_MARGIN) {
+		float xVelocity = position.x - position_old.x;
 		position.x = width - radius - IMGUI_FRAME_MARGIN;
-		velocity.x *= -ELASTICITY;
+		position_old.x = position.x + xVelocity;
 	}
 	if (position.x < radius + IMGUI_FRAME_MARGIN) {
+		float xVelocity = position.x - position_old.x;
 		position.x = radius + IMGUI_FRAME_MARGIN;
-		velocity.x *= -ELASTICITY;
+		position_old.x = position.x + xVelocity;
 	}
 }
 
 void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
-	velocity += acceleration * timeDelta;
-	position += velocity * timeDelta;
+	glm::vec2 velocity = position - position_old;
+	position_old = position;
+	position += velocity + acceleration * timeDelta * timeDelta;
 	acceleration = glm::vec2(0);
 	enforceBoundaries(simWidth, simHeight);
 }
@@ -91,16 +126,6 @@ void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 		obj1->position += .5f * delta * collisionAxis;
 		obj2->position -= .5f * delta * collisionAxis;
 
-		float factorMass1 = 2 * obj1->mass / (obj1->mass + obj2->mass);
-		float factorMass2 = 2 * obj2->mass / (obj1->mass + obj2->mass);
-		glm::vec2 positionDiffVector = obj1->position - obj2->position;
-		glm::vec2 velocityDiffVector = obj1->velocity - obj2->velocity;
-
-		glm::vec2 velocityAdjustment1 = factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
-		glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
-		obj1->velocity -= velocityAdjustment1 * ELASTICITY;
-		obj2->velocity -= velocityAdjustment2 * ELASTICITY;
-
 		obj1->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
 		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
 	}
@@ -118,7 +143,9 @@ void CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cel
 	}
 }
 	 
-void CollisionGrid::handleCollisions() {
+void CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
+	if (widthHigh == -1 || widthHigh >= width) widthHigh = width - 1;
+
 	for (int j = 1; j < height - 1; j++) {
 		for (int i = 1; i < width - 1; i++) {
 			CollisionNode* currentNode = getCell(i, j);
@@ -131,6 +158,20 @@ void CollisionGrid::handleCollisions() {
 				}
 			}
 		}
+	}
+}
+
+void CollisionGrid::handleCollisionsThreaded() {
+	std::thread threads[THREAD_COUNT] = {};
+	float step = static_cast<float>(width) / static_cast<float>(THREAD_COUNT);
+	for (int i = 0; i < THREAD_COUNT; i++) {
+		int widthRangeLow = static_cast<int>(step * i) + 1;
+		int widthRangeHigh = static_cast<int>(step * (i + 1)) + 1;
+		threads[i] = std::thread(&CollisionGrid::handleCollisions, this, widthRangeLow, widthRangeHigh);
+	}
+
+	for (int i = 0; i < THREAD_COUNT; i++) {
+		threads[i].join();
 	}
 }
 
@@ -237,7 +278,13 @@ void PhysicsController::handleCollisions() {
 		glm::u8vec2 gridIndex = obj->position / static_cast<float>(CELL_SIZE) + glm::vec2(1,1);
 		assert(grid->insert(obj, gridIndex));
 	}
+
+#ifdef USE_THREADS 
+	grid->handleCollisionsThreaded();
+#else
 	grid->handleCollisions();
+#endif
+
 
 #else
 	for (PhysicsObject* obj1 : objects) {
