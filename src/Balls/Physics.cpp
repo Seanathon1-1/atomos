@@ -7,7 +7,7 @@
 #define IMGUI_FRAME_MARGIN 4
 #define GRAVITAIONAL_FORCE 45
 #define SPAWNER_EXIT_SPEED 2.4f
-#define OBJECT_SIZE 4
+#define OBJECT_SIZE 4 
 #define CELL_SIZE (OBJECT_SIZE * 2)
 #define MAX_OBJECTS 3500
 #define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
@@ -35,22 +35,22 @@ PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 	float fun = 1 - abs( fmod(static_cast<float>(hue) / 60.f, 2) - 1);
 	switch (hue / 60) {
 	case 0:
-		color = 0xFFFF0000 + (static_cast<int>(0xFF * fun) << 8);
-		break;
-	case 1:
-		color = 0xFF00FF00 + (static_cast<int>(0xFF * fun) << 16);
-		break;
-	case 2:
-		color = 0xFF00FF00 + static_cast<int>(0xFF * fun);
-		break;
-	case 3:
 		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 8);
 		break;
+	case 1:
+		color = 0xFF00FF00 + static_cast<int>(0xFF * fun);
+		break;
+	case 2:
+		color = 0xFF00FF00 + (static_cast<int>(0xFF * fun) << 16);
+		break;
+	case 3:
+		color = 0xFFFF0000 + (static_cast<int>(0xFF * fun) << 8);
+		break;
 	case 4:
-		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 16);
+		color = 0xFFFF0000 + static_cast<int>(0xFF * fun);
 		break;
 	case 5:
-		color = 0xFFFF0000 + static_cast<int>(0xFF * fun);
+		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 16);
 		break;
 	default:
 		color = 0xFFFFFFFF;
