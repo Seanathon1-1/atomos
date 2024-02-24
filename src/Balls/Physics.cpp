@@ -9,15 +9,15 @@
 #define SPAWNER_EXIT_SPEED 2.4f
 #define OBJECT_SIZE 4 
 #define CELL_SIZE (OBJECT_SIZE * 2)
-#define MAX_OBJECTS 3500
+#define MAX_OBJECTS 32000
 #define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
 #define COLLISION_ITERATIONS 5
-#define THREAD_COUNT 2
+#define THREAD_COUNT 16
 #define MAX_TIME_STEP (1.f / 60.f)
 
 #define USE_COLLISION_GRID
-//#define USE_THREADS
+#define USE_THREADS
 
 class PhysicsController;
 
@@ -28,7 +28,7 @@ PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 	position = pos;
 	position_old = pos - v;
 	acceleration = glm::vec2(0);
-	radius = r;
+	radius = r;	
 	mass = r * r * DENSITY;
 	
 	uint16_t hue = objCount % 360;
@@ -136,7 +136,7 @@ void CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cel
 		PhysicsObject* obj1 = cell1->objects[i];
 		for (int j = 0; j < cell2->count(); j++) {
 			PhysicsObject* obj2 = cell2->objects[j];
-			if (obj1 != obj2) {
+			if (obj1 != obj2) {	
 				checkCollision(obj1, obj2);
 			}
 		}
@@ -161,17 +161,12 @@ void CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
 	}
 }
 
-void CollisionGrid::handleCollisionsThreaded() {
-	std::thread threads[THREAD_COUNT] = {};
+void CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
 	float step = static_cast<float>(width) / static_cast<float>(THREAD_COUNT);
 	for (int i = 0; i < THREAD_COUNT; i++) {
 		int widthRangeLow = static_cast<int>(step * i) + 1;
 		int widthRangeHigh = static_cast<int>(step * (i + 1)) + 1;
-		threads[i] = std::thread(&CollisionGrid::handleCollisions, this, widthRangeLow, widthRangeHigh);
-	}
-
-	for (int i = 0; i < THREAD_COUNT; i++) {
-		threads[i].join();
+		pool->addTask(std::bind(&CollisionGrid::handleCollisions, this, widthRangeLow, widthRangeHigh));
 	}
 }
 
@@ -217,6 +212,7 @@ PhysicsController::PhysicsController(uint16_t simulationWidth_, uint16_t simulat
 	uint16_t gridHeight = floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 3;
 
 	grid = new CollisionGrid(gridWidth, gridHeight, this);
+	pool = new ThreadPool(THREAD_COUNT);
 
 	addSpawnerN(this, { 75, 75 }, { 1, 0 }, SPAWNER_EXIT_SPEED, 5);
 }
@@ -225,6 +221,7 @@ PhysicsController::~PhysicsController() {
 	for (PhysicsObject* obj : objects) delete obj;
 	for (auto spawner : spawners) delete spawner;
 	delete grid;
+	delete pool;
 }
 
 void PhysicsController::addSpawner(PhysicsController* ctrlr, glm::vec2 position, glm::vec2 direction, float magnitude) {
@@ -280,7 +277,7 @@ void PhysicsController::handleCollisions() {
 	}
 
 #ifdef USE_THREADS 
-	grid->handleCollisionsThreaded();
+	grid->handleCollisionsThreaded(pool);
 #else
 	grid->handleCollisions();
 #endif
