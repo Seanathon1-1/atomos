@@ -9,7 +9,7 @@
 #include <future>
 
 #define REFRACTORY_TIME .115f
-#define MAX_COLLISION_NODE_OBJECTS 16
+#define MAX_COLLISION_NODE_OBJECTS 4
 
 // forward declarations
 class PhysicsController;

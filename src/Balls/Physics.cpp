@@ -7,14 +7,17 @@
 #define IMGUI_FRAME_MARGIN 4
 #define GRAVITAIONAL_FORCE 45
 #define SPAWNER_EXIT_SPEED 2.4f
-#define OBJECT_SIZE 4 
+#define MAX_SPEED SPAWNER_EXIT_SPEED * 3.5f
+#define OBJECT_SIZE 2 
 #define CELL_SIZE (OBJECT_SIZE * 2)
-#define MAX_OBJECTS 32000
-#define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
+#define MAX_OBJECTS 4300
+#define SPAWNER_OFFSET glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
 #define COLLISION_ITERATIONS 5
-#define THREAD_COUNT 16
+#define THREAD_COUNT 4
+#define EPSILON 0.01
 #define MAX_TIME_STEP (1.f / 60.f)
+
 
 #define USE_COLLISION_GRID
 #define USE_THREADS
@@ -64,34 +67,38 @@ void PhysicsObject::accelerate(glm::vec2 acc) {
 }
 
 void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
+	glm::vec2 velocity = position_old - position;
 	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
-		float yVelocity = position.y - position_old.y;
+		velocity *= glm::vec2(1, -1);
 		position.y = height - radius - IMGUI_FRAME_MARGIN;
-		position_old.y = position.y + yVelocity;
+		position_old = position + velocity * ELASTICITY;
 	}
 	if (position.y < radius + IMGUI_FRAME_MARGIN) {
-		float yVelocity = position.y - position_old.y;
+		velocity *= glm::vec2(1, -1);
 		position.y = radius + IMGUI_FRAME_MARGIN;
-		position_old.y = position.y + yVelocity;
+		position_old = position + velocity * ELASTICITY;
 	}
 
 	if (position.x > width - radius - IMGUI_FRAME_MARGIN) {
-		float xVelocity = position.x - position_old.x;
+		velocity *= glm::vec2(-1, 1);
 		position.x = width - radius - IMGUI_FRAME_MARGIN;
-		position_old.x = position.x + xVelocity;
+		position_old = position + velocity * ELASTICITY;
 	}
 	if (position.x < radius + IMGUI_FRAME_MARGIN) {
-		float xVelocity = position.x - position_old.x;
+		velocity *= glm::vec2(-1, 1);
 		position.x = radius + IMGUI_FRAME_MARGIN;
-		position_old.x = position.x + xVelocity;
+		position_old = position + velocity * ELASTICITY;
 	}
 }
 
 void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
 	glm::vec2 velocity = position - position_old;
+	float speed = glm::length(velocity);
+	color = (speed > MAX_SPEED) ? 0xFF0000FF : 0xFFFFFFFF;
 	position_old = position;
 	position += velocity + acceleration * timeDelta * timeDelta;
 	acceleration = glm::vec2(0);
+	if (speed < EPSILON) position_old = position;
 	enforceBoundaries(simWidth, simHeight);
 }
 
@@ -100,7 +107,7 @@ size_t CollisionNode::count() const {
 }
 
 bool CollisionNode::insert(PhysicsObject* obj) {
-	if (numObjects >= maxObjects) return 0;
+	assert(numObjects < maxObjects);
 	objects[numObjects++] = obj;
 	return 1;
 }
