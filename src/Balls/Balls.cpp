@@ -11,14 +11,16 @@
 #include <GLFW/glfw3.h>
 #include <glm.hpp>
 #include "Physics.hpp"
+#include "Timer.hpp"
 
-#include <chrono>
 #include <vector>
 #include <iostream>
 
 
 #define SIMULATION_WINDOW_WIDTH 800
 #define SIMULATION_WINDOW_HEIGHT 700
+
+#define TIME_STEP 1.f / 60.f
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);	
@@ -29,16 +31,9 @@ const unsigned int SCR_WIDTH = 1920;
 const unsigned int SCR_HEIGHT = 1080;
 
 bool debug;
-
-// timing
-std::chrono::steady_clock::time_point timeCurrent;
-std::chrono::steady_clock::time_point timeLastFrame;
-std::chrono::duration<double, std::milli> delta;
+Timer timer;
 float frames = 0.f;
 float deltaTime = 0.f;
-
-bool useCustomDT = false;
-float customDeltaTime = 0.006f;
 
 PhysicsController* physics; 
 
@@ -96,7 +91,7 @@ int main()
 
 	// render loop
 	// -----------
-	timeLastFrame = timeCurrent = std::chrono::steady_clock::now();
+	timer.start();
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 		// input
@@ -125,15 +120,10 @@ int main()
 		ImGui::UpdatePlatformWindows();
 		ImGui::RenderPlatformWindowsDefault();
 	
-		timeCurrent = std::chrono::steady_clock::now();
-		delta = timeCurrent - timeLastFrame;
-		deltaTime = static_cast<float>(delta.count()) / 1000;
-		frames = 1 / deltaTime;
-		if (useCustomDT) deltaTime = customDeltaTime;
-
-		timeLastFrame = timeCurrent;
-
-		physics->update(deltaTime);
+		
+		deltaTime = timer.readmarkSplitMillis() / 1000;
+		frames = 1.f / deltaTime;
+		physics->update(TIME_STEP);
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		// -------------------------------------------------------------------------------

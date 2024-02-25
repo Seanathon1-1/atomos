@@ -1,37 +1,67 @@
 #include "Physics.hpp"
 #include "imgui.h"
+#include <iostream>
 #include <thread>
 #include <iostream>
 
 #define ELASTICITY .6f
 #define IMGUI_FRAME_MARGIN 4
-#define GRAVITAIONAL_FORCE 140
-#define SPAWNER_EXIT_SPEED 260
-#define OBJECT_SIZE 8
+#define GRAVITAIONAL_FORCE 45
+#define SPAWNER_EXIT_SPEED 2.4f
+#define MAX_SPEED SPAWNER_EXIT_SPEED * 3.5f
+#define OBJECT_SIZE 2 
 #define CELL_SIZE (OBJECT_SIZE * 2)
-#define MAX_OBJECTS 2500
-#define SPAWNER_OFFSET glm::vec2(-8, OBJECT_SIZE * 2 + 2)
+#define MAX_OBJECTS 4300
+#define SPAWNER_OFFSET glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
-#define COLLISION_ITERATIONS 8
-#define THREAD_COUNT 16
+#define COLLISION_ITERATIONS 5
+#define THREAD_COUNT 4
+#define EPSILON 0.01
 #define MAX_TIME_STEP (1.f / 60.f)
-
-#define BASE_COLOR 0xffffffff
 
 
 #define USE_COLLISION_GRID
-//#define USE_THREAD
+#define USE_THREADS
 
 
 class PhysicsController;
+
+
+static uint16_t objCount = 0;
  
-PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v, uint32_t col = BASE_COLOR) {
+PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 	position = pos;
 	velocity = v;
 	acceleration = glm::vec2(0);
-	radius = r;
-	color = col;
+	radius = r;	
 	mass = r * r * DENSITY;
+	
+	uint16_t hue = objCount % 360;
+	float fun = 1 - abs( fmod(static_cast<float>(hue) / 60.f, 2) - 1);
+	switch (hue / 60) {
+	case 0:
+		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 8);
+		break;
+	case 1:
+		color = 0xFF00FF00 + static_cast<int>(0xFF * fun);
+		break;
+	case 2:
+		color = 0xFF00FF00 + (static_cast<int>(0xFF * fun) << 16);
+		break;
+	case 3:
+		color = 0xFFFF0000 + (static_cast<int>(0xFF * fun) << 8);
+		break;
+	case 4:
+		color = 0xFFFF0000 + static_cast<int>(0xFF * fun);
+		break;
+	case 5:
+		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 16);
+		break;
+	default:
+		color = 0xFFFFFFFF;
+		break;
+	}
+	objCount++;
 }
 
 void PhysicsObject::accelerate(glm::vec2 acc) {
@@ -45,7 +75,7 @@ void PhysicsObject::addNormalDirection(glm::vec2 dir) {
 }
 
 void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
-	if (position.y >= height - radius - IMGUI_FRAME_MARGIN) {
+	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
 		position.y = height - radius - IMGUI_FRAME_MARGIN;
 		velocity.y *= -ELASTICITY;
 		addNormalDirection(glm::vec2(0, -1));
@@ -90,6 +120,8 @@ void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeigh
 	velocity += acceleration * timeDelta;
 	position += velocity * timeDelta;
 	acceleration = glm::vec2(0);
+	if (speed < EPSILON) position_old = position;
+	enforceBoundaries(simWidth, simHeight);
 }
 
 size_t CollisionNode::count() const {
@@ -98,7 +130,6 @@ size_t CollisionNode::count() const {
 
 bool CollisionNode::insert(PhysicsObject* obj) {
 	assert(numObjects < maxObjects);
-	if (numObjects >= maxObjects) return 0;
 	objects[numObjects++] = obj;
 	return 1;
 }
@@ -148,7 +179,7 @@ void CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cel
 		PhysicsObject* obj1 = cell1->objects[i];
 		for (int j = 0; j < cell2->count(); j++) {
 			PhysicsObject* obj2 = cell2->objects[j];
-			if (obj1 != obj2) {
+			if (obj1 != obj2) {	
 				checkCollision(obj1, obj2);
 			}
 		}
@@ -175,20 +206,14 @@ void CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
 	}
 }
 
-void CollisionGrid::handleCollisionsThreaded() {
-	std::thread threads[THREAD_COUNT] = {};
+void CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
 	float step = static_cast<float>(width) / static_cast<float>(THREAD_COUNT);
 	for (int i = 0; i < THREAD_COUNT; i++) {
 		int widthRangeLow = static_cast<int>(step * i) + 1;
 		int widthRangeHigh = static_cast<int>(step * (i + 1)) + 1;
-		threads[i] = std::thread(&CollisionGrid::handleCollisions, this, widthRangeLow, widthRangeHigh);
-	} 
-
-	for (int i = 0; i < THREAD_COUNT; i++) {
-		threads[i].join();
+		pool->addTask(std::bind(&CollisionGrid::handleCollisions, this, widthRangeLow, widthRangeHigh));
 	}
 }
-
 
 
 template <typename T>
@@ -232,6 +257,7 @@ PhysicsController::PhysicsController(uint16_t simulationWidth_, uint16_t simulat
 	uint16_t gridHeight = floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 3;
 
 	grid = new CollisionGrid(gridWidth, gridHeight, this);
+	pool = new ThreadPool(THREAD_COUNT);
 
 	addSpawnerN({ 75, 75 }, { 1, 0 }, SPAWNER_EXIT_SPEED, 5);
 }
@@ -240,6 +266,7 @@ PhysicsController::~PhysicsController() {
 	for (PhysicsObject* obj : objects) delete obj;
 	for (auto spawner : spawners) delete spawner;
 	delete grid;
+	delete pool;
 }
 
 void PhysicsController::addSpawner(glm::vec2 position, glm::vec2 direction, float magnitude) {
@@ -294,11 +321,13 @@ void PhysicsController::handleCollisions() {
 		glm::u8vec2 gridIndex = obj->position / static_cast<float>(CELL_SIZE) + glm::vec2(1,1);
 		assert(grid->insert(obj, gridIndex));
 	}
-#ifdef USE_THREAD
-	grid->handleCollisionsThreaded();
+
+#ifdef USE_THREADS 
+	grid->handleCollisionsThreaded(pool);
 #else
 	grid->handleCollisions();
 #endif
+
 
 #else
 	for (PhysicsObject* obj1 : objects) {
