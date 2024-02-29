@@ -123,7 +123,7 @@ int main()
 		
 		deltaTime = timer.readmarkSplitMillis() / 1000;
 		frames = 1.f / deltaTime;
-		physics->update(TIME_STEP);
+		physics->update(deltaTime);
 
 		// glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
 		// -------------------------------------------------------------------------------

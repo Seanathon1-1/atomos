@@ -9,7 +9,7 @@
 #include <future>
 
 #define REFRACTORY_TIME .115f
-#define MAX_COLLISION_NODE_OBJECTS 4
+#define MAX_COLLISION_NODE_OBJECTS 16
 
 // forward declarations
 class PhysicsController;
@@ -106,20 +106,20 @@ public:
 
 
 
-
+enum Direction { POSITIVE_X = 0, NEGATIVE_X, POSITIVE_Y, NEGATIVE_Y };
 struct PhysicsObject {
 	glm::vec2 position;
-	glm::vec2 position_old;
+	glm::vec2 velocity;
 	glm::vec2 acceleration;
+	bool normalDirections[4];
+
 	float radius;
 	uint32_t color;
 	float mass;
-	glm::vec2 normalForce = glm::vec2(0);
-
+	
 	PhysicsObject(glm::vec2 pos, float r, glm::vec2 v);
+	~PhysicsObject();
 	void accelerate(glm::vec2 acc);
-	void addNormalDirection(glm::vec2 dir);
-	void findNormal(uint16_t width, uint16_t height);
 	void enforceBoundaries(uint16_t width, uint16_t height);
 	void update(float timeDelta, uint16_t simWidth, uint16_t simHeight);
 };

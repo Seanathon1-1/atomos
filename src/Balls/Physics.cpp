@@ -6,12 +6,12 @@
 
 #define ELASTICITY .6f
 #define IMGUI_FRAME_MARGIN 4
-#define GRAVITAIONAL_FORCE 45
-#define SPAWNER_EXIT_SPEED 2.4f
+#define GRAVITATIONAL_FORCE 45.f
+#define SPAWNER_EXIT_SPEED 160.f
 #define MAX_SPEED SPAWNER_EXIT_SPEED * 3.5f
-#define OBJECT_SIZE 2 
+#define OBJECT_SIZE 4
 #define CELL_SIZE (OBJECT_SIZE * 2)
-#define MAX_OBJECTS 4300
+#define MAX_OBJECTS 2000
 #define SPAWNER_OFFSET glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2 + 2)
 #define DENSITY 2
 #define COLLISION_ITERATIONS 5
@@ -58,69 +58,48 @@ PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 		color = 0xFF0000FF + (static_cast<int>(0xFF * fun) << 16);
 		break;
 	default:
-		color = 0xFFFFFFFF;
+		color = 0xFFFFFFFF;  
 		break;
 	}
 	objCount++;
+
+}
+
+PhysicsObject::~PhysicsObject() {
+	objCount--;
 }
 
 void PhysicsObject::accelerate(glm::vec2 acc) {
 	acceleration += acc;
 }
 
-void PhysicsObject::addNormalDirection(glm::vec2 dir) {
-	dir /= glm::length(dir);
-	normalForce += dir;
-	normalForce /= glm::length(normalForce);
-}
 
 void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
 	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
 		position.y = height - radius - IMGUI_FRAME_MARGIN;
 		velocity.y *= -ELASTICITY;
-		addNormalDirection(glm::vec2(0, -1));
 	}
-	if (position.y <= radius + IMGUI_FRAME_MARGIN) {
+	if (position.y < radius + IMGUI_FRAME_MARGIN) {
 		position.y = radius + IMGUI_FRAME_MARGIN;
 		velocity.y *= -ELASTICITY;
-		addNormalDirection(glm::vec2(0, 1));
 	}
 
-	if (position.x >= width - radius - IMGUI_FRAME_MARGIN) {
+	if (position.x > width - radius - IMGUI_FRAME_MARGIN) {
 		position.x = width - radius - IMGUI_FRAME_MARGIN;
 		velocity.x *= -ELASTICITY;
-		addNormalDirection(glm::vec2(-1, 0));
 	}
-	if (position.x <= radius + IMGUI_FRAME_MARGIN) {
+	if (position.x < radius + IMGUI_FRAME_MARGIN) {
 		position.x = radius + IMGUI_FRAME_MARGIN;
 		velocity.x *= -ELASTICITY;
-		addNormalDirection(glm::vec2(1, 0));
 	}
 }
 
-void PhysicsObject::findNormal(uint16_t width, uint16_t height) {
-	if (position.y >= height - radius - IMGUI_FRAME_MARGIN) {
-		addNormalDirection(glm::vec2(0, -1));
-	}
-	if (position.y <= radius + IMGUI_FRAME_MARGIN) {
-		addNormalDirection(glm::vec2(0, 1));
-	}
-
-	if (position.x >= width - radius - IMGUI_FRAME_MARGIN) {
-		addNormalDirection(glm::vec2(-1, 0));
-	}
-	if (position.x <= radius + IMGUI_FRAME_MARGIN) {
-		addNormalDirection(glm::vec2(1, 0));
-	}
-}
 
 void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
-	normalForce = glm::vec2(0);
-	findNormal(simWidth, simHeight);
 	velocity += acceleration * timeDelta;
 	position += velocity * timeDelta;
 	acceleration = glm::vec2(0);
-	if (speed < EPSILON) position_old = position;
+	if (glm::length(velocity) < EPSILON) velocity = glm::vec2(0);
 	enforceBoundaries(simWidth, simHeight);
 }
 
@@ -149,28 +128,31 @@ void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 	float minDist = obj1->radius + obj2->radius;
 	if (dist < minDist) {
 		glm::vec2 collisionAxis = distanceVector / dist;
-		glm::vec2 tangentAxis = glm::vec2(-collisionAxis.y, collisionAxis.x);
-
 		float delta = minDist - dist;
-		float repositionAmount = .5f * delta;
-		obj1->position += repositionAmount * glm::normalize(collisionAxis + obj1->normalForce);
-		obj2->position -= repositionAmount * glm::normalize(collisionAxis + obj2->normalForce);
-
-		obj1->addNormalDirection(obj2->normalForce);
-		obj2->addNormalDirection(obj1->normalForce);
-
-		float factorMass1 = 2 * obj1->mass / (obj1->mass + obj2->mass);
-		float factorMass2 = 2 * obj2->mass / (obj1->mass + obj2->mass);
+		
+		glm::vec2 repositionDistance1 = .5f * delta * glm::normalize(collisionAxis);
+		glm::vec2 repositionDistance2 = -.5f * delta * glm::normalize(collisionAxis);
+		float factorMass1 = 2 * obj2->mass / (obj1->mass + obj2->mass);
+		float factorMass2 = 2 * obj1->mass / (obj1->mass + obj2->mass);
 		glm::vec2 positionDiffVector = obj1->position - obj2->position;
 		glm::vec2 velocityDiffVector = obj1->velocity - obj2->velocity;
 
 		glm::vec2 velocityAdjustment1 = factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
 		glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
+
+	
+
+				
+		obj1->position += repositionDistance1;
+		obj2->position += repositionDistance2;
+
 		obj1->velocity -= velocityAdjustment1 * ELASTICITY;
 		obj2->velocity -= velocityAdjustment2 * ELASTICITY;
 
+
+
 		obj1->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
-		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
+		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);	
 	}
 }
 
@@ -301,7 +283,7 @@ void PhysicsController::update(float dt) {
 		spawner->update(dt);
 	}
 	for (PhysicsObject* obj : objects) {
-		obj->accelerate(glm::vec2(0, GRAVITAIONAL_FORCE));
+		obj->accelerate(glm::vec2(0, GRAVITATIONAL_FORCE));
 		obj->update(dt, simulationWidth, simulationHeight);
 		obj->enforceBoundaries(simulationWidth, simulationHeight);
 	}
