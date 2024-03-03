@@ -18,7 +18,7 @@ public:
 	GridContainer(uint16_t m, uint16_t n) {
 		width = m;
 		height = n;
-
+		
 		for (int i = 0; i < m * n; i++) {
 			gridSquares.push_back(new T());
 		}

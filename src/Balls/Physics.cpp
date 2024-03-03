@@ -24,12 +24,9 @@
 #define USE_THREADS
 
 
-class PhysicsController;
-
-
 static uint16_t objCount = 0;
- 
-PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
+
+PhysicsController::PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 	position = pos;
 	velocity = v;
 	acceleration = glm::vec2(0);
@@ -65,16 +62,16 @@ PhysicsObject::PhysicsObject(glm::vec2 pos, float r, glm::vec2 v) {
 
 }
 
-PhysicsObject::~PhysicsObject() {
+PhysicsController::PhysicsObject::~PhysicsObject() {
 	objCount--;
 }
 
-void PhysicsObject::accelerate(glm::vec2 acc) {
+void PhysicsController::PhysicsObject::accelerate(glm::vec2 acc) {
 	acceleration += acc;
 }
 
 
-void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
+void PhysicsController::PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
 	if (position.y > height - radius - IMGUI_FRAME_MARGIN) {
 		position.y = height - radius - IMGUI_FRAME_MARGIN;
 		velocity.y *= -ELASTICITY;
@@ -95,7 +92,7 @@ void PhysicsObject::enforceBoundaries(uint16_t width, uint16_t height) {
 }
 
 
-void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
+void PhysicsController::PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
 	velocity += acceleration * timeDelta;
 	position += velocity * timeDelta;
 	acceleration = glm::vec2(0);
@@ -103,33 +100,33 @@ void PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeigh
 	enforceBoundaries(simWidth, simHeight);
 }
 
-size_t CollisionNode::count() const {
+size_t PhysicsController::CollisionNode::count() const {
 	return numObjects;
 }
 
-bool CollisionNode::insert(PhysicsObject* obj) {
+bool PhysicsController::CollisionNode::insert(PhysicsObject* obj) {
 	assert(numObjects < maxObjects);
 	objects[numObjects++] = obj;
 	return 1;
 }
 
-void CollisionNode::clear() {
+void PhysicsController::CollisionNode::clear() {
 	numObjects = 0;
 }
 
-CollisionGrid::CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr) : GridContainer<CollisionNode>(m, n) {
+PhysicsController::CollisionGrid::CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr) : GridContainer<CollisionNode>(m, n) {
 	controlledBy = ctrlr;
 }
 
 
-void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
+void PhysicsController::CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 	glm::vec2 distanceVector = obj1->position - obj2->position;
 	float dist = glm::length(distanceVector);
 	float minDist = obj1->radius + obj2->radius;
 	if (dist < minDist) {
 		glm::vec2 collisionAxis = distanceVector / dist;
 		float delta = minDist - dist;
-		
+
 		glm::vec2 repositionDistance1 = .5f * delta * glm::normalize(collisionAxis);
 		glm::vec2 repositionDistance2 = -.5f * delta * glm::normalize(collisionAxis);
 		float factorMass1 = 2 * obj2->mass / (obj1->mass + obj2->mass);
@@ -140,9 +137,9 @@ void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 		glm::vec2 velocityAdjustment1 = factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
 		glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
 
-	
 
-				
+
+
 		obj1->position += repositionDistance1;
 		obj2->position += repositionDistance2;
 
@@ -152,26 +149,26 @@ void CollisionGrid::checkCollision(PhysicsObject* obj1, PhysicsObject* obj2) {
 
 
 		obj1->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
-		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);	
+		obj2->enforceBoundaries(controlledBy->simulationWidth, controlledBy->simulationHeight);
 	}
 }
 
-void CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2) {
+void PhysicsController::CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2) {
 	for (int i = 0; i < cell1->count(); i++) {
 		PhysicsObject* obj1 = cell1->objects[i];
 		for (int j = 0; j < cell2->count(); j++) {
 			PhysicsObject* obj2 = cell2->objects[j];
-			if (obj1 != obj2) {	
+			if (obj1 != obj2) {
 				checkCollision(obj1, obj2);
 			}
 		}
 	}
 }
-	 
-void CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
+
+void PhysicsController::CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
 	//work around since I can't put member variables in default parameters
 	if (widthHigh == -1 || widthHigh >= width) widthHigh = width - 1;
-	
+
 
 	for (int j = 1; j < height - 1; j++) {
 		for (int i = widthLow; i < widthHigh; i++) {
@@ -188,7 +185,7 @@ void CollisionGrid::handleCollisions(int widthLow = 1, int widthHigh = -1) {
 	}
 }
 
-void CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
+void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
 	float step = static_cast<float>(width) / static_cast<float>(THREAD_COUNT);
 	for (int i = 0; i < THREAD_COUNT; i++) {
 		int widthRangeLow = static_cast<int>(step * i) + 1;
@@ -199,19 +196,19 @@ void CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
 
 
 template <typename T>
-ObjectSpawner<T>::ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag) {
+PhysicsController::ObjectSpawner<T>::ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag) {
 	controller = ctrlr;
 	position = p;
 	exitVelocity = mag * dir;
 }
 
 template <typename T>
-void ObjectSpawner<T>::shoot(float timeDelta) {
+void PhysicsController::ObjectSpawner<T>::shoot(float timeDelta) {
 	controller->addObject(new T(position, OBJECT_SIZE, exitVelocity));
 }
 
 template <typename T>
-void ObjectSpawner<T>::update(float timeDelta) {
+void PhysicsController::ObjectSpawner<T>::update(float timeDelta) {
 	if (!keepShooting) return;
 	timeSinceLastShot += timeDelta;
 	if (timeSinceLastShot > REFRACTORY_TIME) {
@@ -221,12 +218,12 @@ void ObjectSpawner<T>::update(float timeDelta) {
 }
 
 template <typename T>
-void ObjectSpawner<T>::start() {
+void PhysicsController::ObjectSpawner<T>::start() {
 	keepShooting = true;
 }
 
 template <typename T>
-void ObjectSpawner<T>::stop() {
+void PhysicsController::ObjectSpawner<T>::stop() {
 	keepShooting = false;
 }
 
