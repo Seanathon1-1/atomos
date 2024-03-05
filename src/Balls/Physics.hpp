@@ -15,6 +15,8 @@
 
 
 class PhysicsController {
+	enum Direction {NONE = -1, UP, RIGHT, DOWN, LEFT};
+
 	struct PhysicsObject {
 		glm::vec2 position;
 		glm::vec2 velocity;
@@ -34,9 +36,6 @@ class PhysicsController {
 
 
 
-
-
-
 	struct CollisionNode {
 		static constexpr uint8_t maxObjects = MAX_COLLISION_NODE_OBJECTS;
 		PhysicsObject* objects[maxObjects];
@@ -49,11 +48,19 @@ class PhysicsController {
 
 	struct CollisionEvent {
 		enum CollisionType {CELL_CHANGE, BOUNDARY_ENFORCEMENT, BALL_BALL};
+		
+		CollisionType type;
+		Direction eventDirection;
 		double collisionTime;
+		
+		bool operator<(CollisionEvent otherEvent) {
+			return this->collisionTime < otherEvent.collisionTime;
+		}
 	};
+	typedef std::priority_queue<CollisionEvent> CollisionQueue;
 
 	class CollisionGrid : public GridContainer<CollisionNode> {
-		PhysicsController* controlledBy;
+		CollisionQueue eventQueue;
 
 	public:
 		CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
@@ -70,7 +77,6 @@ class PhysicsController {
 
 	template <typename T>
 	class ObjectSpawner {
-		PhysicsController* controller;
 		glm::vec2 position;
 		glm::vec2 exitVelocity;
 
@@ -79,7 +85,7 @@ class PhysicsController {
 
 		void shoot(float timeDelta);
 	public:
-		ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag);
+		ObjectSpawner(glm::vec2 p, glm::vec2 dir, float mag);
 		void update(float timeDelta);
 		void start();
 		void stop();
@@ -96,7 +102,7 @@ class PhysicsController {
 
 
 
-	std::vector<PhysicsObject*> objects;
+	std::vector<PhysicsObject*> objects;	
 	std::vector<ObjectSpawner<PhysicsObject>*> spawners;
 	CollisionGrid* grid;
 	ThreadPool* pool;

@@ -22,6 +22,7 @@
 
 #define USE_COLLISION_GRID
 #define USE_THREADS
+#define USE_QUEUE
 
 
 static uint16_t objCount = 0;
@@ -196,8 +197,7 @@ void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool
 
 
 template <typename T>
-PhysicsController::ObjectSpawner<T>::ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag) {
-	controller = ctrlr;
+PhysicsController::ObjectSpawner<T>::ObjectSpawner(glm::vec2 p, glm::vec2 dir, float mag) {
 	position = p;
 	exitVelocity = mag * dir;
 }
@@ -279,12 +279,21 @@ void PhysicsController::update(float dt) {
 	for (auto spawner : spawners) {
 		spawner->update(dt);
 	}
+#ifdef USE_QUEUE
+	for (PhysicsObject* obj : objects) {
+		obj->accelerate(glm::vec2(0, GRAVITATIONAL_FORCE));
+		glm::u8vec2 gridIndex = obj->position / static_cast<float>(CELL_SIZE) + glm::vec2(1, 1);
+		grid->insert(obj, gridIndex);
+	}
+#else
+
 	for (PhysicsObject* obj : objects) {
 		obj->accelerate(glm::vec2(0, GRAVITATIONAL_FORCE));
 		obj->update(dt, simulationWidth, simulationHeight);
 		obj->enforceBoundaries(simulationWidth, simulationHeight);
 	}
 	handleCollisionsIterations(COLLISION_ITERATIONS);
+#endif
 }
 
 void PhysicsController::handleCollisionsIterations(uint8_t iterations) {
@@ -306,6 +315,7 @@ void PhysicsController::handleCollisions() {
 #else
 	grid->handleCollisions();
 #endif
+
 
 
 #else
