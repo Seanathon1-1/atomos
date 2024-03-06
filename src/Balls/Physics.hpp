@@ -9,24 +9,26 @@
 #define MAX_COLLISION_NODE_OBJECTS 16
 
 
+class PhysicsController;
 
-
-
-
+struct PhysicsComponent {
+	PhysicsController* controller = 0;
+};
 
 class PhysicsController {
 	enum Direction {NONE = -1, UP, RIGHT, DOWN, LEFT};
 
-	struct PhysicsObject {
+	struct PhysicsObject : PhysicsComponent {
 		glm::vec2 position;
 		glm::vec2 velocity;
 		glm::vec2 acceleration;
 
+		float infrastepTime;
 		float radius;
 		uint32_t color;
 		float mass;
 
-		PhysicsObject(glm::vec2 pos, float r, glm::vec2 v);
+		PhysicsObject(PhysicsController* ctrlr,  glm::vec2 pos, float r, glm::vec2 v);
 		~PhysicsObject();
 		void accelerate(glm::vec2 acc);
 		void enforceBoundaries(uint16_t width, uint16_t height);
@@ -61,6 +63,7 @@ class PhysicsController {
 
 	class CollisionGrid : public GridContainer<CollisionNode> {
 		CollisionQueue eventQueue;
+		
 
 	public:
 		CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
@@ -76,7 +79,7 @@ class PhysicsController {
 
 
 	template <typename T>
-	class ObjectSpawner {
+	class ObjectSpawner : PhysicsComponent {
 		glm::vec2 position;
 		glm::vec2 exitVelocity;
 
@@ -85,23 +88,18 @@ class PhysicsController {
 
 		void shoot(float timeDelta);
 	public:
-		ObjectSpawner(glm::vec2 p, glm::vec2 dir, float mag);
+		ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag);
 		void update(float timeDelta);
 		void start();
 		void stop();
 	};
+	// End inner classes
 
 
 
 
 
-
-
-
-
-
-
-
+	// Physics Controller Members
 	std::vector<PhysicsObject*> objects;	
 	std::vector<ObjectSpawner<PhysicsObject>*> spawners;
 	CollisionGrid* grid;
@@ -115,13 +113,16 @@ class PhysicsController {
 protected:
 	uint16_t simulationWidth;
 	uint16_t simulationHeight;
+	void addObject(PhysicsObject* obj);
+	
+	template <typename T>
+	friend class ObjectSpawner;
 
 
 public:
 	PhysicsController(uint16_t simulationWidth_, uint16_t simulationHeight_);
 	~PhysicsController();
 	size_t getNumObjects();
-	void addObject(PhysicsObject* obj);
 	void stopSpawners();
 	void startSpawners();
 	void update(float dt);

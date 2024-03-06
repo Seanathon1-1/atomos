@@ -6,6 +6,8 @@ workspace "Atomos" -- Name of sln file
     configurations { "Debug", "Release" }
     platforms { "Win32", "x64" }
 
+    cppdialect "C++latest"
+
     --Set architecture
     filter { "platforms:Win32" }
         system "Windows"
