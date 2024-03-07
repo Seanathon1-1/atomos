@@ -5,8 +5,8 @@
 #include "ThreadPool.hpp"
 #include "GridContainer.hpp"
 
-#define REFRACTORY_TIME .115f
-#define MAX_COLLISION_NODE_OBJECTS 16
+constexpr float REFRACTORY_TIME = .115f;
+constexpr int MAX_COLLISION_NODE_OBJECTS = 16;
 
 
 class PhysicsController;
@@ -71,6 +71,8 @@ class PhysicsController {
 		void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
 		void handleCollisions(int widthLow, int widthHigh);
 		void handleCollisionsThreaded(ThreadPool* pool);
+		void addCollisionsToQueue(PhysicsObject*);
+		void checkCollisionsQueue();
 	};
 
 

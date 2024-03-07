@@ -22,7 +22,7 @@ constexpr glm::vec2 SPAWNER_OFFSET = glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2
 
 #define USE_COLLISION_GRID
 #define USE_THREADS
-//#define USE_QUEUE
+#define USE_QUEUE
 
 
 static uint16_t objCount = 0;
@@ -97,7 +97,9 @@ void PhysicsController::PhysicsObject::enforceBoundaries(uint16_t width, uint16_
 
 void PhysicsController::PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
 	velocity += acceleration * timeDelta;
+#ifndef USE_QUEUE
 	position += velocity * timeDelta;
+#endif
 	acceleration = glm::vec2(0);
 	if (glm::length(velocity) < EPSILON) velocity = glm::vec2(0);
 	enforceBoundaries(simWidth, simHeight);
@@ -195,6 +197,14 @@ void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool
 	}
 }
 
+void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* ) {
+
+}
+
+void PhysicsController::CollisionGrid::checkCollisionsQueue() {
+
+}
+
 
 template <typename T>
 PhysicsController::ObjectSpawner<T>::ObjectSpawner(PhysicsController* ctrlr, glm::vec2 p, glm::vec2 dir, float mag) {
@@ -285,7 +295,11 @@ void PhysicsController::update(float dt) {
 	}
 #ifdef USE_QUEUE
 	// add all of the objects into the collision queue
-	for (auto obj : objects) grid->addCollisionsToQueue(obj);
+	for (auto obj : objects) { 
+		obj->accelerate(glm::vec2(0, GRAVITATIONAL_FORCE));
+		obj->update(dt, simulationWidth, simulationHeight);
+		grid->addCollisionsToQueue(obj); 
+	}
 
 	// go through the queue and run all of the potential collisions
 	grid->checkCollisionsQueue();
@@ -293,7 +307,7 @@ void PhysicsController::update(float dt) {
 	// update all objects to the end of the timestep
 	for (auto obj : objects) {
 		if (obj->infrastepTime != dt) {
-			object->position += object->velocity * (dt - object->infrastepTime);
+			obj->position += obj->velocity * (dt - obj->infrastepTime);
 		}
 		// reset infrastepTime for the next frame
 		obj->infrastepTime = 0.f;
