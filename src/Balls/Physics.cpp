@@ -22,7 +22,6 @@ constexpr glm::vec2 SPAWNER_OFFSET = glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2
 
 #define USE_COLLISION_GRID
 #define USE_THREADS
-#define USE_QUEUE
 
 
 static uint16_t objCount = 0;
@@ -110,14 +109,52 @@ size_t PhysicsController::CollisionNode::count() const {
 }
 
 bool PhysicsController::CollisionNode::insert(PhysicsObject* obj) {
-	assert(numObjects < maxObjects);
-	objects[numObjects++] = obj;
+	if (!head) {
+		head = tail = obj;
+		obj->next = obj->previous = obj;
+		numObjects++;
+		return 1;
+	}
+
+	head->previous = tail->next = obj;
+	obj->previous = tail;
+	obj->next = head;
+	tail = obj;
+	numObjects++;
 	return 1;
+}
+
+bool PhysicsController::CollisionNode::remove(PhysicsObject* obj) {
+	assert(obj->next);
+	if (obj->next == obj) {
+		head = 0;
+		tail = 0;
+		obj->previous = obj->next = 0;
+		numObjects--;
+		return 1;
+	}
+
+	PhysicsObject* current = head;
+	do {
+		if (current == obj) {
+			if (current == head) head = current->next;
+			if (current == tail) tail = current->previous;
+			current->previous->next = current->next;
+			current->next->previous = current->previous;
+			current->previous = current->next = 0;
+			numObjects--;
+			return 1;
+		}
+		current = current->next;
+	} while (current != head);
+
+	return 0;
 }
 
 void PhysicsController::CollisionNode::clear() {
 	numObjects = 0;
 }
+
 
 PhysicsController::CollisionGrid::CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr) : GridContainer<CollisionNode>(m, n, CELL_SIZE) {}
 
@@ -140,9 +177,6 @@ void PhysicsController::CollisionGrid::checkCollision(PhysicsObject* obj1, Physi
 		glm::vec2 velocityAdjustment1 = factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
 		glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
 
-
-
-
 		obj1->position += repositionDistance1;
 		obj2->position += repositionDistance2;
 
@@ -156,6 +190,7 @@ void PhysicsController::CollisionGrid::checkCollision(PhysicsObject* obj1, Physi
 	}
 }
 
+#ifndef USE_QUEUE
 void PhysicsController::CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2) {
 	for (int i = 0; i < cell1->count(); i++) {
 		PhysicsObject* obj1 = cell1->objects[i];
@@ -197,12 +232,80 @@ void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool
 	}
 }
 
-void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* ) {
+#endif
 
+void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* object, float dt) {
+	CollisionEvent newEvent;
+	float eventTime;
+	float occuranceTime;
+
+	
+	glm::vec2 newPosition = object->position + object->velocity * dt;
+
+	// check for cell changes
+	CollisionNode* currentNode = getCellFromPosition(object->position);	
+	Direction newNodeDirection = NONE;
+	
+	eventTime = dt;
+	bool eventOccured = false;
+	if (newPosition.x < currentNode->minimumBound.x) {
+		eventOccured = true;
+		occuranceTime = (currentNode->minimumBound.x - object->position.x) / object->velocity.x;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			newNodeDirection = LEFT;
+		}
+	}
+	if (newPosition.y < currentNode->minimumBound.y) {
+		eventOccured = true;
+		occuranceTime = (currentNode->minimumBound.y - object->position.y) / object->velocity.y;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			newNodeDirection = UP;
+		}
+	}
+	if (newPosition.x > currentNode->maximumBound.x) {
+		eventOccured = true;
+		occuranceTime = (object->position.x - currentNode->minimumBound.x) / object->velocity.x;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			newNodeDirection = RIGHT;
+		}
+	}
+	if (newPosition.y > currentNode->maximumBound.y) {
+		eventOccured = true;
+		occuranceTime = (object->position.y - currentNode->minimumBound.y) / object->velocity.y;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			newNodeDirection = DOWN;
+		}
+	}
+	if (eventOccured) newEvent = { CollisionEvent::CELL_CHANGE, eventTime, object, newNodeDirection };
+	eventQueue.push(newEvent);
+		
+
+	// check for boundary enforcements
+
+	// check for object collisions
 }
 
 void PhysicsController::CollisionGrid::checkCollisionsQueue() {
-
+	CollisionEvent nextCollision;
+	while (!eventQueue.empty()) {
+		nextCollision = eventQueue.top(); eventQueue.pop();
+		if (nextCollision.isDirty) continue;
+		switch (nextCollision.type) {
+		case CollisionEvent::CELL_CHANGE:
+			getCellFromPosition(nextCollision.subjectObject->position)->remove(nextCollision.subjectObject);
+			nextCollision.subjectObject->position += nextCollision.subjectObject->velocity * static_cast<float>(nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
+			nextCollision.subjectObject->infrastepTime = nextCollision.eventTime;
+			getCellFromPosition(nextCollision.subjectObject->position)->insert(nextCollision.subjectObject);
+			break;
+		default:
+			exit(1000);
+			break;
+		}
+	}
 }
 
 
@@ -295,15 +398,15 @@ void PhysicsController::update(float dt) {
 	}
 #ifdef USE_QUEUE
 	// add all of the objects into the collision queue
-	for (auto obj : objects) { 
+	for (auto obj : objects) {
 		obj->accelerate(glm::vec2(0, GRAVITATIONAL_FORCE));
 		obj->update(dt, simulationWidth, simulationHeight);
-		grid->addCollisionsToQueue(obj); 
+		grid->addCollisionsToQueue(obj, dt);
 	}
 
 	// go through the queue and run all of the potential collisions
 	grid->checkCollisionsQueue();
-	
+
 	// update all objects to the end of the timestep
 	for (auto obj : objects) {
 		if (obj->infrastepTime != dt) {
@@ -312,6 +415,7 @@ void PhysicsController::update(float dt) {
 		// reset infrastepTime for the next frame
 		obj->infrastepTime = 0.f;
 	}
+}
 #else
 
 	for (PhysicsObject* obj : objects) {
@@ -320,7 +424,6 @@ void PhysicsController::update(float dt) {
 		obj->enforceBoundaries(simulationWidth, simulationHeight);
 	}
 	handleCollisionsIterations(COLLISION_ITERATIONS);
-#endif
 }
 
 void PhysicsController::handleCollisionsIterations(uint8_t iterations) {
@@ -354,6 +457,8 @@ void PhysicsController::handleCollisions() {
 	}
 #endif
 }
+#endif
+
 
 void PhysicsController::displaySimulation() {
 	ImGui::SetNextWindowSize({ static_cast<float>(simulationWidth) + IMGUI_FRAME_MARGIN, static_cast<float>(simulationHeight) + IMGUI_FRAME_MARGIN });

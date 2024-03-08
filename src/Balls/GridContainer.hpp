@@ -8,17 +8,22 @@
 template <typename T>
 concept Placeable = requires (T t) { t.position; };
 
-template <typename NodeType>
+template<typename T>
+concept Boundable = requires (T t) { t.minimumBound; t.maximumBound; };
+
+template <Boundable NodeType>
 class GridContainer {
 protected:
 	static uint32_t nextID;
 	uint16_t width;
 	uint16_t height;
 	uint16_t nodeSize;
-	std::template vector<NodeType*> gridSquares;
+	std::template vector<NodeType*> gridSquares; 
 
 	NodeType* getCell(int x, int y) { return gridSquares.at(y * width + x); }
-	NodeType* getCell(glm::u8vec2 pos) { return getCell(pos.x, pos.y); };
+	NodeType* getCell(glm::u16vec2 pos) { return getCell(pos.x, pos.y); };
+	NodeType* getCellFromPosition(float x, float y) { return gridSquares.at(floor(y / nodeSize) * width + floor(x / nodeSize)); }
+	NodeType* getCellFromPosition(glm::vec2 pos) { return getCellFromPosition(pos.x, pos.y); }
 public:
 	GridContainer(uint16_t m, uint16_t n, uint16_t size) {
 		width = m;

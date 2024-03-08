@@ -8,6 +8,7 @@
 constexpr float REFRACTORY_TIME = .115f;
 constexpr int MAX_COLLISION_NODE_OBJECTS = 16;
 
+#define USE_QUEUE
 
 class PhysicsController;
 
@@ -16,12 +17,15 @@ struct PhysicsComponent {
 };
 
 class PhysicsController {
-	enum Direction {NONE = -1, UP, RIGHT, DOWN, LEFT};
+	enum Direction {NONE = -1, UP, RIGHT, DOWN, LEFT };
 
 	struct PhysicsObject : PhysicsComponent {
 		glm::vec2 position;
 		glm::vec2 velocity;
 		glm::vec2 acceleration;
+
+		PhysicsObject* previous = 0;
+		PhysicsObject* next = 0;
 
 		float infrastepTime;
 		float radius;
@@ -39,39 +43,57 @@ class PhysicsController {
 
 
 	struct CollisionNode {
+#ifndef USE_QUEUE
 		static constexpr uint8_t maxObjects = MAX_COLLISION_NODE_OBJECTS;
 		PhysicsObject* objects[maxObjects];
 		uint8_t numObjects;
+#else
+		glm::vec2 minimumBound;
+		glm::vec2 maximumBound;
+		glm::u16vec2 index;
+
+
+		PhysicsObject* head = 0;
+		PhysicsObject* tail = 0;
+		uint8_t numObjects = 0;
+#endif
 
 		size_t count() const;
 		bool insert(PhysicsObject* obj);
+		bool remove(PhysicsObject* obj);
 		void clear();
 	};
+
 
 	struct CollisionEvent {
 		enum CollisionType {CELL_CHANGE, BOUNDARY_ENFORCEMENT, BALL_BALL};
 		
 		CollisionType type;
+		float eventTime;
+		PhysicsObject* subjectObject;
 		Direction eventDirection;
-		double collisionTime;
+		bool isDirty = false;
 		
 		bool operator<(CollisionEvent otherEvent) {
-			return this->collisionTime < otherEvent.collisionTime;
+			return this->eventTime < otherEvent.eventTime;
+		}
+		bool operator<(const CollisionEvent otherEvent) const {
+			return this->eventTime < otherEvent.eventTime;
 		}
 	};
 	typedef std::priority_queue<CollisionEvent> CollisionQueue;
 
+
 	class CollisionGrid : public GridContainer<CollisionNode> {
 		CollisionQueue eventQueue;
 		
-
 	public:
 		CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
 		void checkCollision(PhysicsObject* obj1, PhysicsObject* obj2);
 		void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
 		void handleCollisions(int widthLow, int widthHigh);
 		void handleCollisionsThreaded(ThreadPool* pool);
-		void addCollisionsToQueue(PhysicsObject*);
+		void addCollisionsToQueue(PhysicsObject* object, float dt);
 		void checkCollisionsQueue();
 	};
 
