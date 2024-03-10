@@ -10,14 +10,16 @@ constexpr int MAX_COLLISION_NODE_OBJECTS = 16;
 
 #define USE_QUEUE
 
-class PhysicsController;
-
-struct PhysicsComponent {
-	PhysicsController* controller = 0;
-};
 
 class PhysicsController {
 	enum Direction {NONE = -1, UP, RIGHT, DOWN, LEFT };
+
+	inline static uint32_t nextID = 1;
+
+	struct PhysicsComponent {
+		PhysicsController* controller = 0;
+		uint32_t id = nextID++;
+	};
 
 	struct PhysicsObject : PhysicsComponent {
 		glm::vec2 position;
@@ -48,8 +50,8 @@ class PhysicsController {
 		PhysicsObject* objects[maxObjects];
 		uint8_t numObjects;
 #else
-		glm::vec2 minimumBound;
-		glm::vec2 maximumBound;
+		glm::u16vec2 minimumBound;
+		glm::u16vec2 maximumBound;
 		glm::u16vec2 index;
 
 
@@ -57,7 +59,11 @@ class PhysicsController {
 		PhysicsObject* tail = 0;
 		uint8_t numObjects = 0;
 #endif
-
+		CollisionNode(int x, int y, uint16_t size) { 
+			index = { x, y };  
+			minimumBound = { x * size, y * size };
+			maximumBound = { (x + 1) * size, (y + 1) * size};
+		}
 		size_t count() const;
 		bool insert(PhysicsObject* obj);
 		bool remove(PhysicsObject* obj);
@@ -72,7 +78,6 @@ class PhysicsController {
 		float eventTime;
 		PhysicsObject* subjectObject;
 		Direction eventDirection;
-		bool isDirty = false;
 		
 		bool operator<(CollisionEvent otherEvent) {
 			return this->eventTime < otherEvent.eventTime;
@@ -94,7 +99,7 @@ class PhysicsController {
 		void handleCollisions(int widthLow, int widthHigh);
 		void handleCollisionsThreaded(ThreadPool* pool);
 		void addCollisionsToQueue(PhysicsObject* object, float dt);
-		void checkCollisionsQueue();
+		void checkCollisionsQueue(float dt);
 	};
 
 

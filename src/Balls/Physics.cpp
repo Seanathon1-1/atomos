@@ -28,6 +28,7 @@ static uint16_t objCount = 0;
 
 PhysicsController::PhysicsObject::PhysicsObject(PhysicsController* ctrlr, glm::vec2 pos, float r, glm::vec2 v) {
 	controller = ctrlr;
+
 	position = pos;
 	velocity = v;
 	acceleration = glm::vec2(0);
@@ -96,12 +97,12 @@ void PhysicsController::PhysicsObject::enforceBoundaries(uint16_t width, uint16_
 
 void PhysicsController::PhysicsObject::update(float timeDelta, uint16_t simWidth, uint16_t simHeight) {
 	velocity += acceleration * timeDelta;
-#ifndef USE_QUEUE
-	position += velocity * timeDelta;
-#endif
 	acceleration = glm::vec2(0);
 	if (glm::length(velocity) < EPSILON) velocity = glm::vec2(0);
+#ifndef USE_QUEUE
+	position += velocity * timeDelta;
 	enforceBoundaries(simWidth, simHeight);
+#endif
 }
 
 size_t PhysicsController::CollisionNode::count() const {
@@ -145,9 +146,9 @@ bool PhysicsController::CollisionNode::remove(PhysicsObject* obj) {
 			numObjects--;
 			return 1;
 		}
-		current = current->next;
-	} while (current != head);
+ 		current = current->next;
 
+	} while (current != head);
 	return 0;
 }
 
@@ -238,73 +239,125 @@ void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* objec
 	CollisionEvent newEvent;
 	float eventTime;
 	float occuranceTime;
+	Direction eventDirection;
 
-	
-	glm::vec2 newPosition = object->position + object->velocity * dt;
+
+	CollisionNode* currentNode = getCellFromPosition(object->position);
+	glm::vec2 newPosition = object->position + object->velocity * (dt - object->infrastepTime);
 
 	// check for cell changes
-	CollisionNode* currentNode = getCellFromPosition(object->position);	
-	Direction newNodeDirection = NONE;
-	
+	eventDirection = NONE;
 	eventTime = dt;
 	bool eventOccured = false;
 	if (newPosition.x < currentNode->minimumBound.x) {
 		eventOccured = true;
-		occuranceTime = (currentNode->minimumBound.x - object->position.x) / object->velocity.x;
+		occuranceTime = object->infrastepTime + abs(currentNode->minimumBound.x - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
-			newNodeDirection = LEFT;
+			eventDirection = LEFT;
 		}
 	}
 	if (newPosition.y < currentNode->minimumBound.y) {
 		eventOccured = true;
-		occuranceTime = (currentNode->minimumBound.y - object->position.y) / object->velocity.y;
+		occuranceTime = object->infrastepTime + abs(currentNode->minimumBound.y - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
-			newNodeDirection = UP;
+			eventDirection = UP;
 		}
 	}
 	if (newPosition.x > currentNode->maximumBound.x) {
 		eventOccured = true;
-		occuranceTime = (object->position.x - currentNode->minimumBound.x) / object->velocity.x;
+		occuranceTime = object->infrastepTime + abs(currentNode->maximumBound.x - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
-			newNodeDirection = RIGHT;
+			eventDirection = RIGHT;
 		}
 	}
 	if (newPosition.y > currentNode->maximumBound.y) {
 		eventOccured = true;
-		occuranceTime = (object->position.y - currentNode->minimumBound.y) / object->velocity.y;
+		occuranceTime = object->infrastepTime + abs(currentNode->maximumBound.y - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
-			newNodeDirection = DOWN;
+			eventDirection = DOWN;
 		}
 	}
-	if (eventOccured) newEvent = { CollisionEvent::CELL_CHANGE, eventTime, object, newNodeDirection };
-	eventQueue.push(newEvent);
-		
+	if (eventOccured) {
+ 		newEvent = { CollisionEvent::CELL_CHANGE, eventTime, object, eventDirection };
+		eventQueue.push(newEvent);
+	}
 
 	// check for boundary enforcements
+	/*
+	eventOccured = false;
+	eventDirection = NONE;
+	eventTime = dt;
+	if (newPosition.x < 0) {
+		eventOccured = true;
+		occuranceTime = (0 - object->position.x) / object->velocity.x;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			eventDirection = LEFT;
+		}
+	}
+	if (newPosition.y < 0) {
+		eventOccured = true;
+		occuranceTime = (0 - object->position.y) / object->velocity.y;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			eventDirection = UP;
+		}
+	}
+	if (newPosition.x > width * nodeSize) {
+		eventOccured = true;
+		occuranceTime = (object->position.x - width * nodeSize) / object->velocity.x;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			eventDirection = RIGHT;
+		}
+	}
+	if (newPosition.y > height * nodeSize) {
+		eventOccured = true;
+		occuranceTime = (object->position.y - height * nodeSize) / object->velocity.y;
+		if (occuranceTime < eventTime) {
+			eventTime = occuranceTime;
+			eventDirection = DOWN;
+		}
+	}
+	if (eventOccured) {
+		newEvent = { CollisionEvent::BOUNDARY_ENFORCEMENT, eventTime, object };
+		eventQueue.push(newEvent);
+	}
+	*/
 
 	// check for object collisions
+
 }
 
-void PhysicsController::CollisionGrid::checkCollisionsQueue() {
+void PhysicsController::CollisionGrid::checkCollisionsQueue(float dt) {
 	CollisionEvent nextCollision;
+	CollisionNode* ppp = 0;
 	while (!eventQueue.empty()) {
 		nextCollision = eventQueue.top(); eventQueue.pop();
-		if (nextCollision.isDirty) continue;
 		switch (nextCollision.type) {
 		case CollisionEvent::CELL_CHANGE:
-			getCellFromPosition(nextCollision.subjectObject->position)->remove(nextCollision.subjectObject);
+			ppp = getCellFromPosition(nextCollision.subjectObject->position);
+			ppp->remove(nextCollision.subjectObject);
 			nextCollision.subjectObject->position += nextCollision.subjectObject->velocity * static_cast<float>(nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
-			nextCollision.subjectObject->infrastepTime = nextCollision.eventTime;
-			getCellFromPosition(nextCollision.subjectObject->position)->insert(nextCollision.subjectObject);
+			ppp = getCellFromPosition(nextCollision.subjectObject->position);
+			ppp->insert(nextCollision.subjectObject);
+			break;
+		case CollisionEvent::BOUNDARY_ENFORCEMENT:
+			nextCollision.subjectObject->position += nextCollision.subjectObject->velocity * static_cast<float>(nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
+			if (nextCollision.eventDirection == UP || nextCollision.eventDirection == DOWN) nextCollision.subjectObject->velocity.y *= -1;
+			if (nextCollision.eventDirection == LEFT || nextCollision.eventDirection == RIGHT) nextCollision.subjectObject->velocity.x *= -1;
+			nextCollision.subjectObject->velocity *= ELASTICITY;
 			break;
 		default:
 			exit(1000);
 			break;
 		}
+		nextCollision.subjectObject->infrastepTime = nextCollision.eventTime;
+		if (nextCollision.subjectObject->infrastepTime < dt) addCollisionsToQueue(nextCollision.subjectObject, dt);
 	}
 }
 
@@ -343,11 +396,13 @@ void PhysicsController::ObjectSpawner<T>::stop() {
 
 
 PhysicsController::PhysicsController(uint16_t simulationWidth_, uint16_t simulationHeight_) {
+	nextID = 0;
+
 	simulationWidth = simulationWidth_;
 	simulationHeight = simulationHeight_;
 
-	uint16_t gridWidth = static_cast<uint16_t>(floor(static_cast<float>(simulationWidth) / CELL_SIZE) + 3);
-	uint16_t gridHeight = static_cast<uint16_t>(floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 3);
+	uint16_t gridWidth = static_cast<uint16_t>(floor(static_cast<float>(simulationWidth) / CELL_SIZE) + 1);
+	uint16_t gridHeight = static_cast<uint16_t>(floor(static_cast<float>(simulationHeight) / CELL_SIZE) + 1);
 
 	grid = new CollisionGrid(gridWidth, gridHeight, this);
 	pool = new ThreadPool(THREAD_COUNT);
@@ -405,12 +460,13 @@ void PhysicsController::update(float dt) {
 	}
 
 	// go through the queue and run all of the potential collisions
-	grid->checkCollisionsQueue();
+	grid->checkCollisionsQueue(dt);
 
 	// update all objects to the end of the timestep
 	for (auto obj : objects) {
 		if (obj->infrastepTime != dt) {
-			obj->position += obj->velocity * (dt - obj->infrastepTime);
+			glm::vec2 newPos = obj->position + obj->velocity * (dt - obj->infrastepTime);
+			obj->position = newPos;
 		}
 		// reset infrastepTime for the next frame
 		obj->infrastepTime = 0.f;

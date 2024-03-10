@@ -31,13 +31,13 @@ public:
 		nodeSize = size;
 		
 		for (int i = 0; i < m * n; i++) {
-			gridSquares.push_back(new NodeType());
+			gridSquares.push_back(new NodeType(i % width, i / width, size));
 		}
 	}
 	~GridContainer() {	for (NodeType* v : gridSquares) delete v; }
 	glm::u16vec2 getGridIndex(glm::vec2 position) {
-		uint16_t x = position.x / nodeSize;
-		uint16_t y = position.y / nodeSize;
+		uint16_t x = floor(position.x / nodeSize);
+		uint16_t y = floor(position.y / nodeSize);
 		return glm::u16vec2(x, y);
 	}
 	template <Placeable NodeObject>bool insert(NodeObject* object) {
