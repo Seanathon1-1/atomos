@@ -7,7 +7,7 @@
 constexpr float ELASTICITY = .6f;
 constexpr int IMGUI_FRAME_MARGIN = 4;
 constexpr float GRAVITATIONAL_FORCE = 45.f;
-constexpr float SPAWNER_EXIT_SPEED = 160.f;
+constexpr float SPAWNER_EXIT_SPEED = -160.f;
 constexpr float MAX_SPEED = SPAWNER_EXIT_SPEED * 3.5f;
 constexpr int OBJECT_SIZE = 4;
 constexpr int CELL_SIZE = (OBJECT_SIZE * 2);
@@ -37,6 +37,7 @@ PhysicsController::PhysicsObject::PhysicsObject(PhysicsController* ctrlr, glm::v
 	mass = r * r * DENSITY;
 	
 	uint16_t hue = objCount % 360;
+	// TODO: turn into interpolation
 	double fun = 1 - abs( fmod(static_cast<float>(hue) / 60.f, 2) - 1);
 	switch (hue / 60) {
 	case 0:
@@ -287,47 +288,45 @@ void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* objec
 	}
 
 	// check for boundary enforcements
-	/*
 	eventOccured = false;
 	eventDirection = NONE;
 	eventTime = dt;
-	if (newPosition.x < 0) {
+	if (newPosition.x < object->radius) {
 		eventOccured = true;
-		occuranceTime = (0 - object->position.x) / object->velocity.x;
+		occuranceTime = object->infrastepTime + abs(object->radius - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
 			eventDirection = LEFT;
 		}
 	}
-	if (newPosition.y < 0) {
+	if (newPosition.y < object->radius) {
 		eventOccured = true;
-		occuranceTime = (0 - object->position.y) / object->velocity.y;
+		occuranceTime = object->infrastepTime + abs(object->radius - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
 			eventDirection = UP;
 		}
 	}
-	if (newPosition.x > width * nodeSize) {
+	if (newPosition.x > width * nodeSize - object->radius) {
 		eventOccured = true;
-		occuranceTime = (object->position.x - width * nodeSize) / object->velocity.x;
+		occuranceTime = object->infrastepTime + abs(object->position.x - (width * nodeSize - object->radius)) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
 			eventDirection = RIGHT;
 		}
 	}
-	if (newPosition.y > height * nodeSize) {
+	if (newPosition.y > height * nodeSize - object->radius) {
 		eventOccured = true;
-		occuranceTime = (object->position.y - height * nodeSize) / object->velocity.y;
+		occuranceTime = object->infrastepTime + abs(object->position.y - (height * nodeSize - object->radius)) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
 			eventTime = occuranceTime;
 			eventDirection = DOWN;
 		}
 	}
 	if (eventOccured) {
-		newEvent = { CollisionEvent::BOUNDARY_ENFORCEMENT, eventTime, object };
+		newEvent = { CollisionEvent::BOUNDARY_ENFORCEMENT, eventTime, object, eventDirection };
 		eventQueue.push(newEvent);
 	}
-	*/
 
 	// check for object collisions
 
@@ -336,10 +335,14 @@ void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* objec
 void PhysicsController::CollisionGrid::checkCollisionsQueue(float dt) {
 	CollisionEvent nextCollision;
 	CollisionNode* ppp = 0;
+	bool skipReentry = false;
 	while (!eventQueue.empty()) {
 		nextCollision = eventQueue.top(); eventQueue.pop();
 		switch (nextCollision.type) {
 		case CollisionEvent::CELL_CHANGE:
+			if (skipReentry) skipReentry = false; continue;
+			if (nextCollision.eventTime - nextCollision.subjectObject->infrastepTime == 0) skipReentry = false;
+
 			ppp = getCellFromPosition(nextCollision.subjectObject->position);
 			ppp->remove(nextCollision.subjectObject);
 			nextCollision.subjectObject->position += nextCollision.subjectObject->velocity * static_cast<float>(nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
