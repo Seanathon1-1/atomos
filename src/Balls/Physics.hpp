@@ -45,19 +45,17 @@ class PhysicsController {
 
 
 	struct CollisionNode {
+		uint8_t numObjects = 0;
+		glm::u16vec2 index;
 #ifndef USE_QUEUE
 		static constexpr uint8_t maxObjects = MAX_COLLISION_NODE_OBJECTS;
 		PhysicsObject* objects[maxObjects];
-		uint8_t numObjects;
 #else
 		glm::u16vec2 minimumBound;
 		glm::u16vec2 maximumBound;
-		glm::u16vec2 index;
-
 
 		PhysicsObject* head = 0;
 		PhysicsObject* tail = 0;
-		uint8_t numObjects = 0;
 #endif
 		CollisionNode(int x, int y, uint16_t size) { 
 			index = { x, y };  
@@ -65,6 +63,7 @@ class PhysicsController {
 			maximumBound = { (x + 1) * size, (y + 1) * size};
 		}
 		size_t count() const;
+		PhysicsObject* getObject(int8_t index);
 		bool insert(PhysicsObject* obj);
 		bool remove(PhysicsObject* obj);
 		void clear();
@@ -72,12 +71,13 @@ class PhysicsController {
 
 
 	struct CollisionEvent {
-		enum CollisionType {CELL_CHANGE, BOUNDARY_ENFORCEMENT, BALL_BALL};
+		enum CollisionType {ERROR, CELL_CHANGE, BOUNDARY_ENFORCEMENT, BALL_BALL};
 		
 		CollisionType type;
 		float eventTime;
 		PhysicsObject* subjectObject;
 		Direction eventDirection;
+		PhysicsObject* predicateObject;
 		
 		bool operator<(CollisionEvent otherEvent) {
 			return this->eventTime < otherEvent.eventTime;
@@ -95,6 +95,7 @@ class PhysicsController {
 	public:
 		CollisionGrid(uint16_t m, uint16_t n, PhysicsController* ctrlr);
 		void checkCollision(PhysicsObject* obj1, PhysicsObject* obj2);
+		void checkCollisionToQueue(PhysicsObject* obj1, PhysicsObject* obj2);
 		void checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2);
 		void handleCollisions(int widthLow, int widthHigh);
 		void handleCollisionsThreaded(ThreadPool* pool);

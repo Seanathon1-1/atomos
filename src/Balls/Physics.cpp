@@ -4,20 +4,24 @@
 #include <thread>
 #include <iostream>
 
+#include "Timer.hpp"
+
 constexpr float ELASTICITY = .6f;
 constexpr int IMGUI_FRAME_MARGIN = 4;
 constexpr float GRAVITATIONAL_FORCE = 45.f;
-constexpr float SPAWNER_EXIT_SPEED = -160.f;
+constexpr float SPAWNER_EXIT_SPEED = 160.f;
 constexpr float MAX_SPEED = SPAWNER_EXIT_SPEED * 3.5f;
 constexpr int OBJECT_SIZE = 4;
 constexpr int CELL_SIZE = (OBJECT_SIZE * 2);
-constexpr int MAX_OBJECTS = 2000;
+constexpr int MAX_OBJECTS = 5;
 constexpr float DENSITY = 2.f;
 constexpr int COLLISION_ITERATIONS = 5;
 constexpr int THREAD_COUNT = 4;
 constexpr float EPSILON = 0.01;
 constexpr float MAX_TIME_STEP(1.f / 60.f);
 constexpr glm::vec2 SPAWNER_OFFSET = glm::vec2(-OBJECT_SIZE * 2, OBJECT_SIZE * 2 + 2);
+
+
 
 
 #define USE_COLLISION_GRID
@@ -110,6 +114,18 @@ size_t PhysicsController::CollisionNode::count() const {
 	return numObjects;
 }
 
+PhysicsController::PhysicsObject* PhysicsController::CollisionNode::getObject(int8_t index) {
+	if (index >= numObjects) return nullptr;
+	
+#ifdef USE_QUEUE
+	PhysicsObject* target = head;
+	for (int i{ index }; i--;) target = target->next;
+	return target;
+#else
+	return objects[index];
+#endif
+}
+
 bool PhysicsController::CollisionNode::insert(PhysicsObject* obj) {
 	if (!head) {
 		head = tail = obj;
@@ -192,14 +208,38 @@ void PhysicsController::CollisionGrid::checkCollision(PhysicsObject* obj1, Physi
 	}
 }
 
-#ifndef USE_QUEUE
+void PhysicsController::CollisionGrid::checkCollisionToQueue(PhysicsObject* obj1, PhysicsObject* obj2) {
+	// perform quadratic equation to find event time
+	glm::vec2 distanceDifference = obj1->position - obj2->position;
+	glm::vec2 velocityDifference = obj1->velocity - obj2->velocity;
+	float minDistance = obj1->radius + obj2->radius;
+
+	float distanceDifferenceInnerProduct = glm::dot(distanceDifference, distanceDifference);
+	float velocityDifferenceInnerProduct = glm::dot(velocityDifference, velocityDifference);
+	float bterm = glm::dot(distanceDifference, velocityDifference) / velocityDifferenceInnerProduct;
+	float determinate = bterm * bterm - (distanceDifferenceInnerProduct - minDistance * minDistance) / velocityDifferenceInnerProduct;
+
+	// 1 solution if == 0, 2 solutions if >0, no real solutions if <0
+	if (determinate >= 0) {
+		// we only care about the earliest collision time
+		float eventTime = -bterm - sqrt(determinate);
+		if (eventTime < 0) return;
+		CollisionEvent newEvent = { CollisionEvent::BALL_BALL, eventTime, obj1, NONE, obj2 };
+		eventQueue.push(newEvent);
+	}
+}
+
 void PhysicsController::CollisionGrid::checkCellCollisions(CollisionNode* cell1, CollisionNode* cell2) {
 	for (int i = 0; i < cell1->count(); i++) {
-		PhysicsObject* obj1 = cell1->objects[i];
+		PhysicsObject* obj1 = cell1->getObject(i);
 		for (int j = 0; j < cell2->count(); j++) {
-			PhysicsObject* obj2 = cell2->objects[j];
+			PhysicsObject* obj2 = cell1->getObject(j);
 			if (obj1 != obj2) {
+#ifdef USE_QUEUE
+				checkCollisionToQueue(obj1, obj2);
+#else
 				checkCollision(obj1, obj2);
+#endif
 			}
 		}
 	}
@@ -225,6 +265,8 @@ void PhysicsController::CollisionGrid::handleCollisions(int widthLow = 1, int wi
 	}
 }
 
+#ifndef USE_QUEUE
+
 void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool) {
 	float step = static_cast<float>(width) / static_cast<float>(THREAD_COUNT);
 	for (int i = 0; i < THREAD_COUNT; i++) {
@@ -237,106 +279,145 @@ void PhysicsController::CollisionGrid::handleCollisionsThreaded(ThreadPool* pool
 #endif
 
 void PhysicsController::CollisionGrid::addCollisionsToQueue(PhysicsObject* object, float dt) {
-	CollisionEvent newEvent;
-	float eventTime;
 	float occuranceTime;
-	Direction eventDirection;
+
+	float eventTime = dt;
+	bool eventOccured = false;
+	Direction eventDirection = NONE;
+	CollisionEvent::CollisionType type = CollisionEvent::ERROR;
+	PhysicsObject* predicateObject = 0;
 
 
 	CollisionNode* currentNode = getCellFromPosition(object->position);
 	glm::vec2 newPosition = object->position + object->velocity * (dt - object->infrastepTime);
 
 	// check for cell changes
-	eventDirection = NONE;
-	eventTime = dt;
-	bool eventOccured = false;
 	if (newPosition.x < currentNode->minimumBound.x) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(currentNode->minimumBound.x - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = LEFT;
+			type = CollisionEvent::CELL_CHANGE;
 		}
 	}
 	if (newPosition.y < currentNode->minimumBound.y) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(currentNode->minimumBound.y - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = UP;
+			type = CollisionEvent::CELL_CHANGE;
 		}
 	}
 	if (newPosition.x > currentNode->maximumBound.x) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(currentNode->maximumBound.x - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = RIGHT;
+			type = CollisionEvent::CELL_CHANGE;
 		}
 	}
 	if (newPosition.y > currentNode->maximumBound.y) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(currentNode->maximumBound.y - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = DOWN;
+			type = CollisionEvent::CELL_CHANGE;
 		}
 	}
-	if (eventOccured) {
- 		newEvent = { CollisionEvent::CELL_CHANGE, eventTime, object, eventDirection };
-		eventQueue.push(newEvent);
-	}
-
+	 
 	// check for boundary enforcements
-	eventOccured = false;
-	eventDirection = NONE;
-	eventTime = dt;
 	if (newPosition.x < object->radius) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(object->radius - object->position.x) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = LEFT;
+			type = CollisionEvent::BOUNDARY_ENFORCEMENT;
 		}
 	}
 	if (newPosition.y < object->radius) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(object->radius - object->position.y) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = UP;
+			type = CollisionEvent::BOUNDARY_ENFORCEMENT;
 		}
 	}
 	if (newPosition.x > width * nodeSize - object->radius) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(object->position.x - (width * nodeSize - object->radius)) / abs(object->velocity.x);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = RIGHT;
+			type = CollisionEvent::BOUNDARY_ENFORCEMENT;
 		}
 	}
 	if (newPosition.y > height * nodeSize - object->radius) {
-		eventOccured = true;
 		occuranceTime = object->infrastepTime + abs(object->position.y - (height * nodeSize - object->radius)) / abs(object->velocity.y);
 		if (occuranceTime < eventTime) {
+			eventOccured = true;
 			eventTime = occuranceTime;
 			eventDirection = DOWN;
+			type = CollisionEvent::BOUNDARY_ENFORCEMENT;
 		}
-	}
-	if (eventOccured) {
-		newEvent = { CollisionEvent::BOUNDARY_ENFORCEMENT, eventTime, object, eventDirection };
-		eventQueue.push(newEvent);
 	}
 
 	// check for object collisions
+	for (int dj = -1; dj <= 1; dj++) {
+		for (int di = -1; di <= 1; di++) {
+			int xAdjacentNodeIndex = currentNode->index.x + di;
+			int yAdjacentNodeIndex = currentNode->index.y + dj;
+			if (xAdjacentNodeIndex < 0 || yAdjacentNodeIndex < 0 || xAdjacentNodeIndex >= width || yAdjacentNodeIndex >= height) continue;
+			CollisionNode* adjacentNode = getCell(xAdjacentNodeIndex, yAdjacentNodeIndex);
+			if (adjacentNode->count() == 0) continue;
+			for (int i = 0; i < adjacentNode->count(); i++) {
+				PhysicsObject* obj2 = adjacentNode->getObject(i);
+				if (object == obj2) continue;
+				// perform quadratic equation to find event time
+				glm::vec2 distanceDifference = object->position - obj2->position;
+				glm::vec2 velocityDifference = object->velocity - obj2->velocity;
+				float minDistance = object->radius + obj2->radius;
 
+				float distanceDifferenceInnerProduct = glm::dot(distanceDifference, distanceDifference);
+				float velocityDifferenceInnerProduct = glm::dot(velocityDifference, velocityDifference);
+				float bterm = glm::dot(distanceDifference, velocityDifference) / velocityDifferenceInnerProduct;
+				float determinate = (bterm * bterm) - ((distanceDifferenceInnerProduct - minDistance * minDistance) / velocityDifferenceInnerProduct);
+
+				// 1 solution if == 0, 2 solutions if >0, no real solutions if <0
+				if (determinate >= 0) {
+					// we only care about the earliest collision time
+					occuranceTime = object->infrastepTime - bterm - sqrt(determinate);
+					if (occuranceTime < eventTime) {
+						eventOccured = true;
+						type = CollisionEvent::BALL_BALL;
+						eventTime = occuranceTime;
+						eventDirection = NONE;
+						predicateObject = obj2;
+					}
+				}
+			}
+		}
+	}
+
+	if (eventOccured) {
+ 		CollisionEvent newEvent = { type, eventTime, object, eventDirection, predicateObject };
+		eventQueue.push(newEvent);
+	}
 }
 
+uint32_t queueCount = 0;
 void PhysicsController::CollisionGrid::checkCollisionsQueue(float dt) {
+	queueCount = 0;
 	CollisionEvent nextCollision;
 	CollisionNode* ppp = 0;
 	bool skipReentry = false;
 	while (!eventQueue.empty()) {
+		queueCount++;
 		nextCollision = eventQueue.top(); eventQueue.pop();
 		switch (nextCollision.type) {
 		case CollisionEvent::CELL_CHANGE:
@@ -349,13 +430,42 @@ void PhysicsController::CollisionGrid::checkCollisionsQueue(float dt) {
 			ppp = getCellFromPosition(nextCollision.subjectObject->position);
 			ppp->insert(nextCollision.subjectObject);
 			break;
+
+			
 		case CollisionEvent::BOUNDARY_ENFORCEMENT:
 			nextCollision.subjectObject->position += nextCollision.subjectObject->velocity * static_cast<float>(nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
-			if (nextCollision.eventDirection == UP || nextCollision.eventDirection == DOWN) nextCollision.subjectObject->velocity.y *= -1;
-			if (nextCollision.eventDirection == LEFT || nextCollision.eventDirection == RIGHT) nextCollision.subjectObject->velocity.x *= -1;
+			if (nextCollision.eventDirection == UP || nextCollision.eventDirection == DOWN) nextCollision.subjectObject->velocity.y *= -ELASTICITY;
+			if (nextCollision.eventDirection == LEFT || nextCollision.eventDirection == RIGHT) nextCollision.subjectObject->velocity.x *= -ELASTICITY;
 			nextCollision.subjectObject->velocity *= ELASTICITY;
 			break;
+
+
+		case CollisionEvent::BALL_BALL:
+		{
+			// move the balls up to the collision point
+			glm::vec2 newSubjectPosition = nextCollision.subjectObject->position + nextCollision.subjectObject->velocity * (nextCollision.eventTime - nextCollision.subjectObject->infrastepTime);
+			glm::vec2 newPredicatePosition = nextCollision.predicateObject->position + nextCollision.predicateObject->velocity * (nextCollision.eventTime - nextCollision.predicateObject->infrastepTime);
+
+			nextCollision.subjectObject->position = newSubjectPosition;
+			nextCollision.predicateObject->position = newPredicatePosition;
+
+			float factorMass1 = 2 * nextCollision.predicateObject->mass / (nextCollision.subjectObject->mass + nextCollision.predicateObject->mass);
+			float factorMass2 = 2 * nextCollision.subjectObject->mass / (nextCollision.subjectObject->mass + nextCollision.predicateObject->mass);
+			glm::vec2 positionDiffVector = nextCollision.subjectObject->position - nextCollision.predicateObject->position;
+			glm::vec2 velocityDiffVector = nextCollision.subjectObject->velocity - nextCollision.predicateObject->velocity;
+
+			glm::vec2 velocityAdjustment1 = factorMass1 * glm::dot(velocityDiffVector, positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * positionDiffVector;
+			glm::vec2 velocityAdjustment2 = factorMass2 * glm::dot(-velocityDiffVector, -positionDiffVector) / glm::dot(positionDiffVector, positionDiffVector) * -positionDiffVector;
+
+			nextCollision.subjectObject->velocity -= velocityAdjustment1 * ELASTICITY;
+			nextCollision.predicateObject->velocity -= velocityAdjustment2 * ELASTICITY;
+
+			nextCollision.predicateObject->infrastepTime = nextCollision.eventTime;
+		}
+			break;
 		default:
+			std::cerr << "Bad Collision Event Detected\n\tSubject Object ID: " << nextCollision.subjectObject->id 
+				<< "\n\tTime of Event: " << nextCollision.eventTime << std::endl;
 			exit(1000);
 			break;
 		}
@@ -517,6 +627,7 @@ void PhysicsController::handleCollisions() {
 #endif
 }
 #endif
+
 
 
 void PhysicsController::displaySimulation() {
